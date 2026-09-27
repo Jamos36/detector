@@ -12,7 +12,7 @@ Backlog by roadmap version. Complete and validate each version before starting t
       column drift vs contract.
 - [x] V1-3 Memory test: generate ~20M rows, ingest with memory_limit, record peak RSS.
 - [x] V1-4 Timestamps without offset: policy (assume UTC + DQ warning) and test.
-- [ ] V1-5 flow_sequence is not unique in real exporters — do not rely on it outside synthetic evaluation.
+- [x] V1-5 flow_sequence is not unique in real exporters — do not rely on it outside synthetic evaluation (ADR-016).
 
 ## V2 — Feature research
 - [ ] Feature registry (required columns, level, transform, rationale, ATT&CK hypothesis).

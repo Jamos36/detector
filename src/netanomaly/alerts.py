@@ -48,9 +48,35 @@ COPY (
     return con.execute(f"SELECT count(*) FROM read_csv({sql_literal(out_csv)})").fetchone()[0]
 
 
+def _check_truth_join(con: duckdb.DuckDBPyConnection, lake: Path, truth_dir: Path) -> None:
+    """Every truth flow_sequence must match exactly one lake flow.
+
+    flow_sequence is unique only within one synthetic `generate` run; real exporters give no such guarantee
+    (unverified), and a lake holding other files (another generate run, other exports) can repeat it.
+    """
+    missing, repeated = con.execute(f"""
+WITH truth AS (SELECT DISTINCT flow_sequence FROM read_csv({sql_literal(truth_dir / 'injected_flows.csv')})),
+matches AS (
+  SELECT t.flow_sequence, count(f.flow_sequence) AS n
+  FROM truth t LEFT JOIN read_parquet({sql_literal(flows_glob(lake))}) f ON f.flow_sequence = t.flow_sequence
+  GROUP BY ALL
+)
+SELECT count(*) FILTER (WHERE n = 0), count(*) FILTER (WHERE n > 1) FROM matches""").fetchone()
+    problems = [f"{n} truth flow_sequence value(s) {what}"
+                for n, what in ((missing, "match no lake flow"), (repeated, "match more than one lake flow")) if n]
+    if problems:
+        raise ValueError("; ".join(problems) + f" in {lake}. recall@K needs a lake built only from the "
+                         "synthetic files of the generate run that wrote the truth.")
+
+
 def recall_at_k(con: duckdb.DuckDBPyConnection, scores: Path, lake: Path, truth_dir: Path, k: int,
                 window_minutes: int) -> list[tuple]:
-    """Per attack type: injections with >=1 window inside the day's top-K, over all injections."""
+    """Per attack type: injections with >=1 window inside the day's top-K, over all injections.
+
+    Synthetic evaluation only: injected flows are joined to the lake by flow_sequence, which the generator
+    makes unique per run. Production code must not rely on flow_sequence; flow_id is the traceability key.
+    """
+    _check_truth_join(con, lake, truth_dir)
     return con.execute(f"""
 WITH truth AS (
   SELECT DISTINCT i.injection_id, m.attack_type, f.src_ip,

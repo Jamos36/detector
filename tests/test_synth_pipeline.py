@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import csv
+import inspect
+import shutil
 from datetime import date
 from pathlib import Path
 
@@ -98,3 +100,43 @@ def test_recall_reports_every_attack_type(synth_root, con):
                                 synth_root / "truth", k=100, window_minutes=5)
     assert sorted(r[0] for r in result) == sorted(ATTACKS)
     assert all(r[2] == 1 for r in result)  # one injection of each type on the attack day
+
+
+# --- flow_sequence is a synthetic evaluation key only (V1-5) -------------------
+
+def _recall(root: Path, lake: Path, truth: Path, con) -> list[tuple]:
+    return alerts.recall_at_k(con, root / "outputs" / "scores.parquet", lake, truth, k=100, window_minutes=5)
+
+
+def test_recall_refuses_a_lake_where_a_truth_flow_sequence_repeats(synth_root, con, tmp_path):
+    lake = tmp_path / "lake"
+    shutil.copytree(synth_root / "lake", lake)
+    truth_csv = (synth_root / "truth" / "injected_flows.csv").as_posix()
+    # a second file with the same flow_sequence, e.g. another exporter or an earlier `generate` into the same root
+    src, seq = con.sql(f"""
+        SELECT filename, flow_sequence FROM read_parquet('{features.flows_glob(lake)}', filename = true)
+        WHERE flow_sequence = (SELECT min(flow_sequence) FROM read_csv('{truth_csv}'))""").fetchone()
+    dup = Path(src).parent / "src_duplicate_0.parquet"
+    con.execute(f"COPY (SELECT * FROM read_parquet('{Path(src).as_posix()}') WHERE flow_sequence = {seq}) "
+                f"TO '{dup.as_posix()}' (FORMAT parquet)")
+    with pytest.raises(ValueError, match="1 truth flow_sequence value.* more than one lake flow"):
+        _recall(synth_root, lake, synth_root / "truth", con)
+
+
+def test_recall_refuses_truth_that_points_at_flows_missing_from_the_lake(synth_root, con, tmp_path):
+    truth = tmp_path / "truth"
+    shutil.copytree(synth_root / "truth", truth)
+    with (truth / "injected_flows.csv").open("a", newline="", encoding="utf-8") as fh:
+        fh.write('999999999999,"20260902-brute_force-0"\n')
+    with pytest.raises(ValueError, match="1 truth flow_sequence value.* no lake flow"):
+        _recall(synth_root, synth_root / "lake", truth, con)
+
+
+def test_production_modules_do_not_use_flow_sequence():
+    """Ingest, features, scoring, alerting and DQ must not key on flow_sequence: its uniqueness in real exports
+    is unverified. flow_id (source file hash + row number) is the traceability key."""
+    src = Path(alerts.__file__).parent
+    allowed = {"synth.py", "alerts.py"}  # generator and synthetic recall@K only
+    offenders = [p.name for p in src.glob("*.py") if p.name not in allowed and "flow_sequence" in p.read_text("utf-8")]
+    assert offenders == []
+    assert "flow_sequence" not in inspect.getsource(alerts.write_top_alerts)

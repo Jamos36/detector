@@ -88,8 +88,8 @@ columns:
      meaning: "Last packet time, UTC. Never before flow_start (verified)."}
   - {raw: flow_end_reason, name: flow_end_reason, type: VARCHAR, model_use: feature, confidence: medium,
      meaning: "Why the exporter closed the flow (IPFIX flowEndReason): idle_timeout, active_timeout, end_of_flow (FIN/RST seen), forced_end. In mock data it is independent of the TCP flags, which it should not be."}
-  - {raw: flow_sequence, name: flow_sequence, type: BIGINT, model_use: provenance, confidence: medium,
-     meaning: "Export sequence counter. Globally unique 1..60000 in mock data; real exporters restart it per exporter/domain."}
+  - {raw: flow_sequence, name: flow_sequence, type: BIGINT, model_use: provenance, confidence: low,
+     meaning: "Export sequence counter (assumed). Globally unique 1..60000 in mock data and unique per synthetic generate run; uniqueness in real exports is unknown (NetFlow/IPFIX sequence numbers are per exporter/observation domain and can reset or wrap). Not a key: never use it to deduplicate, join or identify flows outside synthetic evaluation; flow_id is the traceability key."}
   - {raw: flow_set_id, name: flow_set_id, type: INTEGER, model_use: provenance, confidence: high,
      meaning: "NetFlow v9/IPFIX template (FlowSet) ID; data templates use 256+ (mock range 256-1023 matches)."}
   - {raw: flow_length, name: duration_ms_reported, type: BIGINT, model_use: exclude, confidence: high,

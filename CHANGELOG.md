@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- fix (V1-5): `flow_sequence` is not a key (ADR-016). Audit found no production use; synthetic recall@K, the only
+  join on it, now raises if a truth `flow_sequence` matches no lake flow or more than one, instead of silently
+  miscounting. Contract meaning (confidence lowered to `low`) and SCHEMA.md say uniqueness is unknown.
 - feat (V1-4): explicit timestamp policy (ADR-015). Offset-free timestamps (CSV text or naive Parquet `TIMESTAMP`)
   are assumed UTC independent of the DuckDB session zone and counted in the ledger (`timestamps_without_offset`);
   the DQ report and `ingest`/`dq` logs warn about them. Timestamp text must match a strict ISO-8601 subset;

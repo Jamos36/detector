@@ -107,3 +107,16 @@ shift of every flow by the local offset. DuckDB's own parser is too lenient to d
 `+25:00`, `24:00:00` and `infinity`, and ignores unknown zone abbreviations).
 Revisit when: collector documentation states the export zone. If exports are local time, convert with that zone
 instead of assuming UTC; named IANA zones could then be accepted.
+
+## ADR-016: flow_sequence is not a key; flow_id is the traceability key
+Decision: no production step (ingest, DQ, features, scoring, alerts) uses `flow_sequence` to deduplicate, join or
+identify flows. Traceability is `flow_id = left(sha256(source_file_hash || ':' || source_row_number), 32)` plus
+`source_file`/`source_row_number`. `flow_sequence` stays in the lake as a raw column (contract `provenance`,
+confidence `low`) for lookups in exporter tooling. The only use is synthetic recall@K (`alerts.recall_at_k`), where
+the generator's truth file names injected flows by `flow_sequence`; it first checks that every truth value matches
+exactly one lake flow and raises otherwise (e.g. a lake mixing two `generate` runs or other exports).
+Audit (2026-09-27): no production use was found; the only joins were recall@K and its test.
+Reason: there is no real exporter data or collector documentation to confirm uniqueness. NetFlow/IPFIX sequence
+numbers are per exporter/observation domain and can reset or wrap, and several exporters feed one lake.
+Revisit when: collector documentation defines the field. Even then, key on (exporter, domain, sequence) only if the
+documentation guarantees uniqueness of that tuple; `flow_id` remains the lake key.

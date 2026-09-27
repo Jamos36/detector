@@ -45,7 +45,9 @@ Each stage reads the previous stage's files, so stages re-run independently. `--
   `missing_columns`, `unquoted_value`, `invalid_encoding`, `line_size_over_maximum`, `invalid_state`).
 - If rejected rows exceed `ingest.max_reject_fraction` (default 5%) the whole file is quarantined instead
   (nothing written; ledger reason lists counts per reason). The ledger records `rows` (accepted) and `rejected_rows`.
-- `flow_id = left(sha256(file_hash || ':' || row), 32)` — deterministic across re-runs.
+- `flow_id = left(sha256(file_hash || ':' || row), 32)` — deterministic across re-runs. It is the only flow
+  key: `flow_sequence` is kept as a raw column but never used to deduplicate, join or identify flows, except
+  by synthetic recall@K, which checks that every truth value matches exactly one lake flow (ADR-016).
 - Ledger (JSONL, latest entry per file hash wins): `in_progress` → `ingested | quarantined`.
   Output is written to `lake/_staging/<hash>` and swapped in only after success; a crash leaves the file retryable.
 - Timestamps are TIMESTAMPTZ in UTC, microsecond precision (source nanoseconds truncated). Parsing follows
