@@ -3,7 +3,7 @@
 _Last updated: 2026-09-27_
 
 ## Current milestone
-V0 — Prototype: **complete**. V1 — Ingestion and Data Quality: **complete** (V1-1 … V1-5 done). V2 not started.
+V0 — Prototype: **complete**. V1 — Ingestion and Data Quality: **in progress** (V1-1 … V1-5 done; exporter/collector documentation to validate contract fields still missing — needs the owner). V2 not started.
 
 ## Deployment goal and data boundary (ADR-012, ADR-013, ADR-014)
 - **Everything in this repo is development/demonstration only**: mock and synthetic data, the two committed models
@@ -127,4 +127,4 @@ ruff 0.16.9; present on HEAD before V1-1); all other files clean.
 See `DECISIONS.md` (ADR-001 … ADR-016).
 
 ## Next task
-V1 is complete. Next: review V1 as a whole, then start V2 (feature research, see `TODO.md`) in a new session.
+All numbered V1 tasks are done; the remaining V1 item (collector documentation) depends on the owner. Next: owner decides whether to start V2 (feature research, see `TODO.md`) without it.
