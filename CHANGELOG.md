@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- docs: V1 implementation complete on mock/synthetic data; collector documentation moved out of the V1 checklist
+  into a "real-data onboarding — external prerequisite" section (semantic validation pending, 0/42 validated).
 - fix (V1-5): `flow_sequence` is not a key (ADR-016). Audit found no production use; synthetic recall@K, the only
   join on it, now raises if a truth `flow_sequence` matches no lake flow or more than one, instead of silently
   miscounting. Contract meaning (confidence lowered to `low`) and SCHEMA.md say uniqueness is unknown.

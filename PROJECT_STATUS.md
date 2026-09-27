@@ -3,7 +3,16 @@
 _Last updated: 2026-09-27_
 
 ## Current milestone
-V0 — Prototype: **complete**. V1 — Ingestion and Data Quality: **in progress** (V1-1 … V1-5 done; exporter/collector documentation to validate contract fields still missing — needs the owner). V2 not started.
+V0 — Prototype: **complete**. V1 — Ingestion and Data Quality: **implementation complete** (V1-1 … V1-5
+implemented and tested on mock/synthetic data). **Real-exporter semantic validation: pending** — an external
+prerequisite for real-data use, not a V1 task (see below). V2 not started.
+
+## Real-data onboarding — external prerequisite (pending)
+- Exporter/collector documentation is needed to validate field meanings before any real-data use. It cannot be
+  obtained or completed in this mock/synthetic repo (ADR-012). Contract: **0 of 42 fields validated**; no field is
+  set to `validated: true` until that documentation confirms it (ADR-002).
+- Items waiting on it: field semantics listed under Known issues; export timezone (ADR-015); `flow_sequence`
+  uniqueness (ADR-016); promoting DQ checks to reject rules (ADR-011); re-deriving the 5% reject budget and thresholds.
 
 ## Deployment goal and data boundary (ADR-012, ADR-013, ADR-014)
 - **Everything in this repo is development/demonstration only**: mock and synthetic data, the two committed models
@@ -127,4 +136,6 @@ ruff 0.16.9; present on HEAD before V1-1); all other files clean.
 See `DECISIONS.md` (ADR-001 … ADR-016).
 
 ## Next task
-All numbered V1 tasks are done; the remaining V1 item (collector documentation) depends on the owner. Next: owner decides whether to start V2 (feature research, see `TODO.md`) without it.
+V1 implementation is complete; real-exporter semantic validation stays pending as an external prerequisite
+(owner, outside this repo). Next: owner decides when to start V2 (feature research, see `TODO.md`); V2 work here
+remains on mock/synthetic data and must not treat unvalidated field meanings as confirmed.

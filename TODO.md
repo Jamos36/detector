@@ -2,10 +2,12 @@
 
 Backlog by roadmap version. Complete and validate each version before starting the next.
 
-## Now
-- [ ] Obtain exporter/collector documentation → set `validated` fields in the contract.
+## Real-data onboarding — external prerequisite (not a V1 implementation task)
+Cannot be done in this mock/synthetic repo (ADR-012); must be completed before any real-data use.
+- [ ] Obtain exporter/collector documentation → validate field meanings; only then set `validated: true`
+      per field in the contract (ADR-002) and regenerate `SCHEMA.md`. Currently 0/42 validated.
 
-## V1 — Ingestion and data quality
+## V1 — Ingestion and data quality (implementation complete on mock/synthetic data)
 - [x] V1-1 Row-level rejects with reason codes (DuckDB `store_rejects`), instead of whole-file quarantine.
 - [x] V1-2 Data-quality report per batch: null rates, end<start, ttl_min>ttl_max, bytes/packet > 1514,
       SYN-only flows with >3 packets, ICMP with ports, ingress==egress, VLAN > 4094, daily volume vs trailing median,
