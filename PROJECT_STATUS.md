@@ -3,7 +3,7 @@
 _Last updated: 2026-09-27_
 
 ## Current milestone
-V0 — Prototype: **complete**. V1 — Ingestion and Data Quality: **in progress** (V1-1, V1-2, V1-3 done).
+V0 — Prototype: **complete**. V1 — Ingestion and Data Quality: **in progress** (V1-1 … V1-4 done).
 
 ## Deployment goal and data boundary (ADR-012, ADR-013, ADR-014)
 - **Everything in this repo is development/demonstration only**: mock and synthetic data, the two committed models
@@ -26,6 +26,16 @@ V0 — Prototype: **complete**. V1 — Ingestion and Data Quality: **in progress
 - Real-data prerequisites: collector documentation to validate contract fields; re-deriving thresholds.
 
 ## Completed (V1)
+- V1-4 timestamps without offset (ADR-015, `src/netanomaly/timestamps.py`): offset-free values (text, or Parquet
+  `TIMESTAMP` without isAdjustedToUTC) are assumed UTC explicitly, independent of the DuckDB session zone; ingested
+  rows with them are counted per column in the ledger (`timestamps_without_offset`) and shown as a warning in the DQ
+  report (top line + "Timestamps without offset" section, JSON field) and in `ingest`/`dq` logs. Text must match a
+  strict ISO-8601 subset (offset at most ±14:00); everything else — including values DuckDB accepted before
+  (`+25:00`, `24:00:00`, `infinity`, `EST`, date-only) and integer/DATE Parquet columns — is a `cast_failed` reject.
+  Verified on a copy of the mock CSVs (in scratch storage, not committed) with `+00:00` stripped from `time_stamp`
+  in file 01 and one invalid `flow_end_time`: the DQ report warns about 9,999 values (100% of that file), the bad row is the only reject,
+  and the lake equals the committed `data/lake` except that row. Committed mock/synthetic data all carry
+  offsets (0 warnings). Parse cost on 3M text values: 0.58 s vs 0.27 s for the previous `TRY_CAST` check.
 - V1-1 row-level rejects: bad rows → `lake/rejects/src_<hash32>.parquet` with reason codes
   (`cast_failed`, `missing_required`, DuckDB CSV structure errors); original row numbers preserved;
   file quarantined only above `ingest.max_reject_fraction` (5%). Ledger records `rejected_rows` (ADR-010).
@@ -62,7 +72,7 @@ V0 — Prototype: **complete**. V1 — Ingestion and Data Quality: **in progress
 - Code review: 2 CRITICAL + 2 HIGH findings fixed with regression tests.
 
 ## Tests
-59 passing, 0 failing (3 are tiny-scale smoke tests of `scripts/memtest.py`; the 20M-row run is manual). ruff: 3 pre-existing ISC004 findings in `schema.py` (rule new in
+105 passing, 0 failing (46 in `tests/test_timestamps.py`; 3 are tiny-scale smoke tests of `scripts/memtest.py`; the 20M-row run is manual). ruff: 3 pre-existing ISC004 findings in `schema.py` (rule new in
 ruff 0.16.9; present on HEAD before V1-1); all other files clean.
 
 ## Known issues
@@ -87,6 +97,12 @@ ruff 0.16.9; present on HEAD before V1-1); all other files clean.
   row checks (V1-1) are the likely cause, not profiled. One run per layout on one machine with other load;
   timings are indicative. Synthetic data is cleaner and narrower than real exports (no rejects exercised at scale).
   The DQ report (`dq`) was not measured at 20M rows.
+- V1-4 limits: the export zone is undocumented, so "assume UTC" may be wrong; if an exporter writes local time,
+  flows are shifted by its offset and only the DQ warning signals it (no DST handling). Named IANA zones
+  (`Europe/Berlin`) are rejected, not converted. Warning counts cover rows kept in the lake, per file and column;
+  there is no per-flow flag in the lake. Counting adds one scan of the source's timestamp columns; the extra
+  ingest time at 20M rows (V1-3 layouts) is not re-measured. `flow_date` and `duration_s` still rely on the
+  UTC session zone from `db.connect()`.
 - Mock/synthetic Parquet stores 18 integer columns as BIGINT where the contract says INTEGER/SMALLINT
   (reported as `width` drift; values are cast on ingest).
 - Structural reject types `unquoted_value` / `line_size_over_maximum` / `invalid_state` are mapped but not
@@ -96,7 +112,7 @@ ruff 0.16.9; present on HEAD before V1-1); all other files clean.
   and would only add `rejected_rows` to the ledger.
 
 ## Important decisions
-See `DECISIONS.md` (ADR-001 … ADR-014).
+See `DECISIONS.md` (ADR-001 … ADR-015).
 
 ## Next task
-V1-4: timestamps without offset — policy (assume UTC + DQ warning) and test. See `TODO.md`.
+V1-5: `flow_sequence` is not unique in real exporters — do not rely on it outside synthetic evaluation. See `TODO.md`.
