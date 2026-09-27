@@ -28,6 +28,9 @@ Each stage reads the previous stage's files, so stages re-run independently. `--
 - DuckDB does all scans/aggregations over Parquet with `memory_limit` (default 2GB) and spills to `temp_directory`.
 - Python holds at most `batch_rows` rows (scoring) or `train_sample_rows` (training sample).
 - All settings in `config.yaml`; every connection via `db.connect()`.
+- `memory_limit` bounds DuckDB's buffer manager, not the process: measured process peak is up to ~1.2x–1.5x of it
+  (Python, Arrow, DuckDB allocations outside the buffer pool). Large single CSVs trade memory for spill disk
+  (V1-3: ~14 GB spill for a 7.7 GB / 20M-row CSV). Measure with `scripts/memtest.py`.
 
 ## Ingestion guarantees
 - Content-based type detection (Parquet magic bytes); raw files are never modified.

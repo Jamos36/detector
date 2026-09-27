@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- test (V1-3): `scripts/memtest.py` memory test. 19.86M synthetic rows ingested under memory_limit 2GB in all three
+  layouts (31 daily Parquet, one Parquet, one 7.7 GB CSV); peak working set 0.81 / 2.19 / 2.42 GB. Results in
+  PROJECT_STATUS.md.
 - docs: data boundary (repo is mock/synthetic, development only), LLM-agent tool goal, and current joblib model
   artifact format with its limits (ADR-012 … ADR-014); open deployment questions in PROJECT_STATUS.md.
 - feat (V1-2): per-batch data-quality report `netanomaly dq` → `outputs/dq/dq_<batch>.{json,md}`: plausibility checks,

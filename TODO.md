@@ -10,7 +10,7 @@ Backlog by roadmap version. Complete and validate each version before starting t
 - [x] V1-2 Data-quality report per batch: null rates, end<start, ttl_min>ttl_max, bytes/packet > 1514,
       SYN-only flows with >3 packets, ICMP with ports, ingress==egress, VLAN > 4094, daily volume vs trailing median,
       column drift vs contract.
-- [ ] V1-3 Memory test: generate ~20M rows, ingest with memory_limit, record peak RSS.
+- [x] V1-3 Memory test: generate ~20M rows, ingest with memory_limit, record peak RSS.
 - [ ] V1-4 Timestamps without offset: policy (assume UTC + DQ warning) and test.
 - [ ] V1-5 flow_sequence is not unique in real exporters — do not rely on it outside synthetic evaluation.
 

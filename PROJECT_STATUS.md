@@ -3,7 +3,7 @@
 _Last updated: 2026-09-27_
 
 ## Current milestone
-V0 — Prototype: **complete**. V1 — Ingestion and Data Quality: **in progress** (V1-1, V1-2 done).
+V0 — Prototype: **complete**. V1 — Ingestion and Data Quality: **in progress** (V1-1, V1-2, V1-3 done).
 
 ## Deployment goal and data boundary (ADR-012, ADR-013, ADR-014)
 - **Everything in this repo is development/demonstration only**: mock and synthetic data, the two committed models
@@ -36,6 +36,19 @@ V0 — Prototype: **complete**. V1 — Ingestion and Data Quality: **in progress
   On mock data it independently reproduces the contract's profiling notes (vlan_id_customer > 4094: 65.6%;
   ingress == egress: 935 flows) and flags SYN-only flows with > 3 packets (12.2%) and bytes/packet > 1514 (47 flows).
   Synthetic data: all checks 0, daily volume within 1% of trailing median.
+- V1-3 memory test (`scripts/memtest.py`, 2026-09-27). Synthetic data only (31 days × 3,000 hosts, seed 7, no
+  attacks), generated and ingested in temporary storage outside the repo, then deleted. Settings: config.yaml
+  `memory_limit` 2GB, `threads` 4; DuckDB 1.5.5, Python 3.13.5, Windows 11, 32 GB RAM (3.6–5.8 GB available at
+  start). Peak memory = process peak working set (RSS) and peak commit (private bytes), from the OS.
+
+  | layout | rows | ingest | peak RSS | peak commit | peak DuckDB temp dir | lake |
+  |---|---|---|---|---|---|---|
+  | A: 31 daily Parquet (0.96 GB) | 19,856,906 | 203 s | 0.81 GB | 1.37 GB | 0 | 1.47 GB |
+  | B: 1 Parquet (0.94 GB) | 19,856,906 | 72 s | 2.19 GB | 2.97 GB | 0.31 GB | 1.47 GB |
+  | C: 1 CSV (7.66 GB) | 19,856,906 | 796 s | 2.42 GB | 3.06 GB | 15.2 GB | 1.47 GB |
+
+  All three completed with 0 rejects; the three lakes are identical (row count, sum of bytes and packets,
+  time range, distinct flow_sequence, 31 dates). Peak temp dir includes the staged CSV copy (1.6 GB).
 
 ## Completed (V0)
 - Schema contract + data dictionary for all 42 raw columns (`SCHEMA.md`, generated); 0/42 validated.
@@ -49,7 +62,7 @@ V0 — Prototype: **complete**. V1 — Ingestion and Data Quality: **in progress
 - Code review: 2 CRITICAL + 2 HIGH findings fixed with regression tests.
 
 ## Tests
-56 passing, 0 failing; coverage 97%. ruff: 3 pre-existing ISC004 findings in `schema.py` (rule new in
+59 passing, 0 failing (3 are tiny-scale smoke tests of `scripts/memtest.py`; the 20M-row run is manual). ruff: 3 pre-existing ISC004 findings in `schema.py` (rule new in
 ruff 0.16.9; present on HEAD before V1-1); all other files clean.
 
 ## Known issues
@@ -68,6 +81,12 @@ ruff 0.16.9; present on HEAD before V1-1); all other files clean.
   are not written to the ledger, so they do not appear in a batch's file list.
 - DQ column drift re-hashes the batch's raw files to find them (the ledger stores names, not paths);
   cost on very large files is not measured yet (V1-3).
+- V1-3 limits: `memory_limit` caps DuckDB's buffer pool, not the process — peaks reached 1.2x (RSS) to 1.5x
+  (commit) of it, so budget ~3 GB of RAM for a 2GB limit. A single large CSV needs a lot of spill disk
+  (~14 GB for a 7.7 GB CSV) and runs ~11x slower than the same rows as Parquet; the all-VARCHAR staging and
+  row checks (V1-1) are the likely cause, not profiled. One run per layout on one machine with other load;
+  timings are indicative. Synthetic data is cleaner and narrower than real exports (no rejects exercised at scale).
+  The DQ report (`dq`) was not measured at 20M rows.
 - Mock/synthetic Parquet stores 18 integer columns as BIGINT where the contract says INTEGER/SMALLINT
   (reported as `width` drift; values are cast on ingest).
 - Structural reject types `unquoted_value` / `line_size_over_maximum` / `invalid_state` are mapped but not
@@ -80,4 +99,4 @@ ruff 0.16.9; present on HEAD before V1-1); all other files clean.
 See `DECISIONS.md` (ADR-001 … ADR-014).
 
 ## Next task
-V1-3: 20M-row memory test (generate, ingest + dq under memory_limit, record peak RSS). See `TODO.md`.
+V1-4: timestamps without offset — policy (assume UTC + DQ warning) and test. See `TODO.md`.
