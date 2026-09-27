@@ -27,6 +27,11 @@ class Paths(BaseModel):
     quarantine: Path = Path("data/quarantine")
 
 
+class IngestSettings(BaseModel):
+    # Above this share of rejected rows the whole file is quarantined: a file problem, not bad records.
+    max_reject_fraction: float = Field(default=0.05, ge=0, le=1)
+
+
 class ModelSettings(BaseModel):
     train_sample_rows: int = Field(default=200_000, ge=1_000)
     n_estimators: int = Field(default=200, ge=10)
@@ -38,6 +43,7 @@ class ModelSettings(BaseModel):
 class Settings(BaseModel):
     paths: Paths = Paths()
     duckdb: DuckDBSettings = DuckDBSettings()
+    ingest: IngestSettings = IngestSettings()
     model: ModelSettings = ModelSettings()
     batch_rows: int = Field(default=50_000, ge=1_000)
     window_minutes: int = Field(default=5, ge=1)

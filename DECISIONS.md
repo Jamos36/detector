@@ -44,3 +44,12 @@ Decision (owner, 2026-09-27): `data/` remains committed and is not git-ignored; 
 Reason: the project will never process real network traffic, so the repo holds only mock and synthetic data
 (commit 1449dc1, ~99 MB including generated artifacts).
 Revisit when: real traffic is ever introduced — then git-ignore `data/` before it lands in `data/raw`.
+
+## ADR-010: Row-level rejects with a file-level reject budget
+Decision: bad rows (malformed CSV record, uncastable value, empty required column) go to a reason-coded reject table
+and the rest of the file is ingested; the whole file is quarantined only when rejects exceed `max_reject_fraction` (5%).
+CSV is staged as text and typed with `TRY_CAST`, so type checks are identical for CSV and Parquet sources.
+Reason: one bad row used to quarantine a whole file; a high reject share signals a wrong export/format, where partial
+ingestion would silently bias every downstream feature.
+Rejected: DuckDB `ignore_errors` (drops rows without a trace); typed `read_csv` rejects (Parquet sources not covered).
+Revisit when: real collector data shows a typical reject rate that makes 5% too tight or too loose.

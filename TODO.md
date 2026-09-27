@@ -6,7 +6,7 @@ Backlog by roadmap version. Complete and validate each version before starting t
 - [ ] Obtain exporter/collector documentation → set `validated` fields in the contract.
 
 ## V1 — Ingestion and data quality
-- [ ] V1-1 Row-level rejects with reason codes (DuckDB `store_rejects`), instead of whole-file quarantine.
+- [x] V1-1 Row-level rejects with reason codes (DuckDB `store_rejects`), instead of whole-file quarantine.
 - [ ] V1-2 Data-quality report per batch: null rates, end<start, ttl_min>ttl_max, bytes/packet > 1514,
       SYN-only flows with >3 packets, ICMP with ports, ingress==egress, VLAN > 4094, daily volume vs trailing median,
       column drift vs contract.

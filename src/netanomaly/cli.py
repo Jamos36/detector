@@ -71,8 +71,9 @@ def cmd_generate(args: argparse.Namespace, s: Settings) -> None:
 
 def cmd_ingest(args: argparse.Namespace, s: Settings) -> None:
     con = connect(s.duckdb)
-    for e in ingest_directory(con, s.paths.raw, load_contract(), s.paths.lake, s.duckdb.temp_directory / "stage"):
-        log.info("%-40s %-18s rows=%-8d %s", e.source_file, e.status, e.rows, e.reason)
+    for e in ingest_directory(con, s.paths.raw, load_contract(), s.paths.lake, s.duckdb.temp_directory / "stage",
+                              s.ingest.max_reject_fraction):
+        log.info("%-40s %-18s rows=%-8d rejected=%-6d %s", e.source_file, e.status, e.rows, e.rejected_rows, e.reason)
 
 
 def cmd_features(args: argparse.Namespace, s: Settings) -> None:

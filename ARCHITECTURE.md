@@ -14,7 +14,7 @@ Python 3.13 (uv), DuckDB, Parquet/PyArrow, scikit-learn, pydantic, pytest. CPU o
 | Stage | Module | Reads | Writes |
 |---|---|---|---|
 | generate | `synth.py`, `inject.py` | — | `raw/synth_netflow_*.parquet`, `truth/{hosts,injections,injected_flows}.csv` |
-| ingest | `ingest.py` | `raw/**/*.csv, *.parquet` | `lake/flows/flow_date=YYYY-MM-DD/src_<hash32>_<i>.parquet`, `lake/_ingest_ledger.jsonl` |
+| ingest | `ingest.py` | `raw/**/*.csv, *.parquet` | `lake/flows/flow_date=YYYY-MM-DD/src_<hash32>_<i>.parquet`, `lake/rejects/src_<hash32>.parquet`, `lake/_ingest_ledger.jsonl` |
 | features | `features.py` | lake | `features/host_window/flow_date=…/` |
 | train | `iforest.py` | features (reservoir sample) | `models/iforest-<ts>/{model.joblib, manifest.json}` |
 | score | `iforest.py` | features (Arrow batches) | `outputs/scores.parquet` |
@@ -30,8 +30,17 @@ Each stage reads the previous stage's files, so stages re-run independently. `--
 
 ## Ingestion guarantees
 - Content-based type detection (Parquet magic bytes); raw files are never modified.
-- CSV → staged Parquet with explicit contract types and preserved order, then `read_parquet(file_row_number)`
-  gives `source_row_number` (1-based data row; CSV line = row + 1).
+- CSV → staged all-VARCHAR Parquet in record order (`read_csv(store_rejects)`); records DuckDB cannot split into
+  columns are held in a temp table, and surviving rows are renumbered past them (ASOF join), so
+  `source_row_number` is always the 1-based data record in the original file (quoted multi-line fields count once).
+- Contract types are applied with `TRY_CAST` for CSV and Parquet alike. A row is **rejected**, not the file, when a
+  value cannot be cast, a required column (`flow_start`, `flow_end`, `src_ip`, `dst_ip`) is empty, or the CSV
+  record is malformed. Rejects go to `lake/rejects/src_<hash32>.parquet`, one row per (record, reason):
+  `flow_id, source_file, source_row_number, reason, column_name, raw_value, detail, source_file_hash, ingest_batch_id`.
+  Reason codes: `cast_failed`, `missing_required`, and DuckDB's CSV errors snake_cased (`too_many_columns`,
+  `missing_columns`, `unquoted_value`, `invalid_encoding`, `line_size_over_maximum`, `invalid_state`).
+- If rejected rows exceed `ingest.max_reject_fraction` (default 5%) the whole file is quarantined instead
+  (nothing written; ledger reason lists counts per reason). The ledger records `rows` (accepted) and `rejected_rows`.
 - `flow_id = left(sha256(file_hash || ':' || row), 32)` — deterministic across re-runs.
 - Ledger (JSONL, latest entry per file hash wins): `in_progress` → `ingested | quarantined`.
   Output is written to `lake/_staging/<hash>` and swapped in only after success; a crash leaves the file retryable.
