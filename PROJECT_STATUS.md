@@ -3,7 +3,7 @@
 _Last updated: 2026-09-27_
 
 ## Current milestone
-V0 — Prototype: **complete**. V1 — Ingestion and Data Quality: **in progress** (V1-1 … V1-4 done).
+V0 — Prototype: **complete**. V1 — Ingestion and Data Quality: **complete** (V1-1 … V1-5 done). V2 not started.
 
 ## Deployment goal and data boundary (ADR-012, ADR-013, ADR-014)
 - **Everything in this repo is development/demonstration only**: mock and synthetic data, the two committed models
@@ -26,6 +26,15 @@ V0 — Prototype: **complete**. V1 — Ingestion and Data Quality: **in progress
 - Real-data prerequisites: collector documentation to validate contract fields; re-deriving thresholds.
 
 ## Completed (V1)
+- V1-5 `flow_sequence` is not a key (ADR-016). Audit of `src/`, `scripts/` and `tests/`: no production step
+  (ingest, DQ, features, scoring, alerts) deduplicates, joins or identifies flows by it; `flow_id` is the key.
+  Uses found, all synthetic: the generator assigns it and writes `truth/injected_flows.csv` by it; `recall_at_k`
+  joins truth to the lake on it; `test_injection_truth_points_at_injected_flows` does the same; the V1-3 run
+  compared its three synthetic lakes by distinct `flow_sequence` (a manual check, not code). Change: `recall_at_k`
+  now raises if a truth value matches no lake flow or more than one (e.g. a lake mixing two `generate` runs)
+  instead of silently miscounting; a source-scan test keeps it out of production modules; contract meaning
+  rewritten (uniqueness in real exports unknown, confidence `low`). `evaluate` on `data/synth` gives the same
+  recall as before (e.g. beaconing 1/3, others 3/3 at K=100).
 - V1-4 timestamps without offset (ADR-015, `src/netanomaly/timestamps.py`): offset-free values (text, or Parquet
   `TIMESTAMP` without isAdjustedToUTC) are assumed UTC explicitly, independent of the DuckDB session zone; ingested
   rows with them are counted per column in the ledger (`timestamps_without_offset`) and shown as a warning in the DQ
@@ -72,7 +81,7 @@ V0 — Prototype: **complete**. V1 — Ingestion and Data Quality: **in progress
 - Code review: 2 CRITICAL + 2 HIGH findings fixed with regression tests.
 
 ## Tests
-105 passing, 0 failing (46 in `tests/test_timestamps.py`; 3 are tiny-scale smoke tests of `scripts/memtest.py`; the 20M-row run is manual). ruff: 3 pre-existing ISC004 findings in `schema.py` (rule new in
+108 passing, 0 failing (3 new for V1-5; 46 in `tests/test_timestamps.py`; 3 are tiny-scale smoke tests of `scripts/memtest.py`; the 20M-row run is manual). ruff: 3 pre-existing ISC004 findings in `schema.py` (rule new in
 ruff 0.16.9; present on HEAD before V1-1); all other files clean.
 
 ## Known issues
@@ -108,11 +117,14 @@ ruff 0.16.9; present on HEAD before V1-1); all other files clean.
 - Structural reject types `unquoted_value` / `line_size_over_maximum` / `invalid_state` are mapped but not
   exercised by tests (could not be triggered in probes); row renumbering is tested for extra/missing columns
   and invalid encoding.
+- V1-5 limits: uniqueness of `flow_sequence` in real exports is still unknown, and no DQ check measures it
+  (e.g. duplicates per exporter/observation domain); it only matters if a future step wants it as a key.
+  The source-scan test matches the literal name only.
 - Existing `data/lake` and `data/synth/lake` were built by V0 code; re-ingest is not needed (output is identical)
   and would only add `rejected_rows` to the ledger.
 
 ## Important decisions
-See `DECISIONS.md` (ADR-001 … ADR-015).
+See `DECISIONS.md` (ADR-001 … ADR-016).
 
 ## Next task
-V1-5: `flow_sequence` is not unique in real exporters — do not rely on it outside synthetic evaluation. See `TODO.md`.
+V1 is complete. Next: review V1 as a whole, then start V2 (feature research, see `TODO.md`) in a new session.
