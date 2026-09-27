@@ -32,6 +32,14 @@ class IngestSettings(BaseModel):
     max_reject_fraction: float = Field(default=0.05, ge=0, le=1)
 
 
+class DQSettings(BaseModel):
+    # Daily volume is compared with the median of the previous `trailing_days` calendar days (strictly earlier).
+    trailing_days: int = Field(default=7, ge=1)
+    min_history_days: int = Field(default=3, ge=1)
+    volume_ratio_low: float = Field(default=0.5, gt=0)
+    volume_ratio_high: float = Field(default=2.0, gt=0)
+
+
 class ModelSettings(BaseModel):
     train_sample_rows: int = Field(default=200_000, ge=1_000)
     n_estimators: int = Field(default=200, ge=10)
@@ -44,6 +52,7 @@ class Settings(BaseModel):
     paths: Paths = Paths()
     duckdb: DuckDBSettings = DuckDBSettings()
     ingest: IngestSettings = IngestSettings()
+    dq: DQSettings = DQSettings()
     model: ModelSettings = ModelSettings()
     batch_rows: int = Field(default=50_000, ge=1_000)
     window_minutes: int = Field(default=5, ge=1)

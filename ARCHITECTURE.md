@@ -15,6 +15,7 @@ Python 3.13 (uv), DuckDB, Parquet/PyArrow, scikit-learn, pydantic, pytest. CPU o
 |---|---|---|---|
 | generate | `synth.py`, `inject.py` | — | `raw/synth_netflow_*.parquet`, `truth/{hosts,injections,injected_flows}.csv` |
 | ingest | `ingest.py` | `raw/**/*.csv, *.parquet` | `lake/flows/flow_date=YYYY-MM-DD/src_<hash32>_<i>.parquet`, `lake/rejects/src_<hash32>.parquet`, `lake/_ingest_ledger.jsonl` |
+| dq | `quality.py` | lake + rejects + ledger + raw headers | `outputs/dq/dq_<batch>.{json,md}` |
 | features | `features.py` | lake | `features/host_window/flow_date=…/` |
 | train | `iforest.py` | features (reservoir sample) | `models/iforest-<ts>/{model.joblib, manifest.json}` |
 | score | `iforest.py` | features (Arrow batches) | `outputs/scores.parquet` |
@@ -45,6 +46,18 @@ Each stage reads the previous stage's files, so stages re-run independently. `--
 - Ledger (JSONL, latest entry per file hash wins): `in_progress` → `ingested | quarantined`.
   Output is written to `lake/_staging/<hash>` and swapped in only after success; a crash leaves the file retryable.
 - Timestamps are TIMESTAMPTZ in UTC, microsecond precision (source nanoseconds truncated).
+
+## Data-quality report (`netanomaly dq [--batch ID]`, also run after ingest in `run`)
+- Scope: files whose latest ledger entry has that `ingest_batch_id` (default: newest batch).
+- One DuckDB pass over the batch's lake files gives the row count, every plausibility check
+  (applicable rows, violations, first violating `source_file:row`) and per-column null counts.
+- Rejects by (reason, column) from `lake/rejects/`; quarantined files appear in the files table with their ledger reason.
+- Column drift: raw files located by name and confirmed by hash; header vs contract (missing/unexpected);
+  Parquet physical types vs contract as `width` (same family, cast on ingest) or `family` (different).
+- Daily volume: flows per UTC day across the whole lake vs the median of the previous `dq.trailing_days`
+  calendar days (strictly earlier, missing days = 0); `low`/`high` outside `dq.volume_ratio_low/high`,
+  `insufficient_history` below `dq.min_history_days`.
+- Observational only: the report never blocks ingestion or later stages.
 
 ## Schema contract
 `src/netanomaly/contracts/netflow_v1.yaml` maps raw → canonical names and types and records meaning,

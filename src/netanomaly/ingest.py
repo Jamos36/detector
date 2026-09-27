@@ -321,14 +321,20 @@ def _reject_summary(con: duckdb.DuckDBPyConnection, rejects_file: Path) -> tuple
     return total, ", ".join(f"{reason}={n}" for reason, n in by_reason)
 
 
-def _rejects_path(lake: Path, file_hash: str) -> Path:
+def rejects_path(lake: Path, file_hash: str) -> Path:
+    """Reject table of one source file (exists only if some of its rows were rejected)."""
     return lake / REJECTS_DIR / f"src_{file_hash[:HASH_PREFIX]}.parquet"
 
 
+def flow_files(lake: Path, file_hash: str) -> list[Path]:
+    """Lake Parquet files holding the flows of one source file, one per UTC date."""
+    return sorted((lake / FLOWS_DIR).glob(f"flow_date=*/src_{file_hash[:HASH_PREFIX]}_*.parquet"))
+
+
 def _clear_previous_output(lake: Path, file_hash: str) -> None:
-    for old in (lake / FLOWS_DIR).glob(f"flow_date=*/src_{file_hash[:HASH_PREFIX]}_*.parquet"):
+    for old in flow_files(lake, file_hash):
         old.unlink()
-    _rejects_path(lake, file_hash).unlink(missing_ok=True)
+    rejects_path(lake, file_hash).unlink(missing_ok=True)
 
 
 def _swap_in(new_flows: Path, lake: Path, file_hash: str, rejects_file: Path | None) -> None:
@@ -339,7 +345,7 @@ def _swap_in(new_flows: Path, lake: Path, file_hash: str, rejects_file: Path | N
         dest.parent.mkdir(parents=True, exist_ok=True)
         f.replace(dest)
     if rejects_file is not None:
-        dest = _rejects_path(lake, file_hash)
+        dest = rejects_path(lake, file_hash)
         dest.parent.mkdir(parents=True, exist_ok=True)
         rejects_file.replace(dest)
 

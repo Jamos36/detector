@@ -53,3 +53,10 @@ Reason: one bad row used to quarantine a whole file; a high reject share signals
 ingestion would silently bias every downstream feature.
 Rejected: DuckDB `ignore_errors` (drops rows without a trace); typed `read_csv` rejects (Parquet sources not covered).
 Revisit when: real collector data shows a typical reject rate that makes 5% too tight or too loose.
+
+## ADR-011: Data-quality report is per batch and observational
+Decision: `netanomaly dq` reports one ingest batch (checks, nulls, rejects, drift) plus daily volume vs the median
+of strictly earlier calendar days (missing days count as 0). It flags; it never blocks ingestion or modelling.
+Reason: field meanings are unverified, so a violation may be legitimate traffic or a misread field; a human decides.
+Daily volume uses only earlier days, like every other baseline in the project (no temporal leakage).
+Revisit when: collector documentation validates the fields behind a check — then that check may become a reject rule.

@@ -16,7 +16,7 @@ from pathlib import Path
 
 import joblib
 
-from netanomaly import alerts, features, iforest
+from netanomaly import alerts, features, iforest, quality
 from netanomaly.config import Paths, Settings, load_settings
 from netanomaly.db import connect
 from netanomaly.ingest import ingest_directory
@@ -76,6 +76,19 @@ def cmd_ingest(args: argparse.Namespace, s: Settings) -> None:
         log.info("%-40s %-18s rows=%-8d rejected=%-6d %s", e.source_file, e.status, e.rows, e.rejected_rows, e.reason)
 
 
+def cmd_dq(args: argparse.Namespace, s: Settings) -> None:
+    batch = getattr(args, "batch", None) or quality.latest_batch(s.paths.lake)
+    if batch is None:
+        log.warning("no ingest batch in %s; nothing to report", s.paths.lake)
+        return
+    report = quality.build_report(connect(s.duckdb), load_contract(), s.paths.lake, s.paths.raw, batch, s.dq)
+    _, md_path = quality.write_report(report, s.paths.outputs / quality.REPORT_DIR)
+    flagged = [c.name for c in report.checks if c.violations]
+    volume = [f"{v.flow_date}={v.status}" for v in report.volume if v.status in ("low", "high")]
+    log.info("dq batch %s: %d flows, %d rejected; checks with violations: %s; volume flags: %s -> %s",
+             batch, report.flows, report.rejected_rows, flagged or "none", volume or "none", md_path)
+
+
 def cmd_features(args: argparse.Namespace, s: Settings) -> None:
     rows = features.build_host_window(connect(s.duckdb), s.paths.lake, _host_window_dir(s), s.window_minutes)
     log.info("host-window feature rows: %d", rows)
@@ -116,7 +129,7 @@ def cmd_schema_doc(args: argparse.Namespace, s: Settings) -> None:
 
 
 def cmd_run(args: argparse.Namespace, s: Settings) -> None:
-    for step in (cmd_ingest, cmd_features, cmd_train, cmd_score, cmd_alerts):
+    for step in (cmd_ingest, cmd_dq, cmd_features, cmd_train, cmd_score, cmd_alerts):
         step(args, s)
 
 
@@ -137,6 +150,9 @@ def build_parser() -> argparse.ArgumentParser:
                        ("score", cmd_score), ("alerts", cmd_alerts), ("run", cmd_run),
                        ("schema-doc", cmd_schema_doc)):
         sub.add_parser(name).set_defaults(func=func)
+    q = sub.add_parser("dq", help="data-quality report for one ingest batch -> outputs/dq/dq_<batch>.{json,md}")
+    q.add_argument("--batch", help="ingest_batch_id to report on (default: newest in the ledger)")
+    q.set_defaults(func=cmd_dq)
     e = sub.add_parser("evaluate", help="recall@K against injected attacks (synthetic data only)")
     e.add_argument("--k", type=int, nargs="+", default=[50, 100, 500])
     e.set_defaults(func=cmd_evaluate)

@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- feat (V1-2): per-batch data-quality report `netanomaly dq` → `outputs/dq/dq_<batch>.{json,md}`: plausibility checks,
+  null rates, rejects by reason, column drift vs contract, daily volume vs trailing median; also runs in `run`.
 - feat (V1-1): row-level rejects. Bad rows go to `lake/rejects/` with reason codes instead of quarantining the file;
   files over `ingest.max_reject_fraction` (5%) are still quarantined. Ledger gains `rejected_rows`.
 - docs: durable project memory (CLAUDE.md, PROJECT_STATUS.md, ARCHITECTURE.md, DECISIONS.md, TODO.md, CHANGELOG.md).
