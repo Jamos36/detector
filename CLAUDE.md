@@ -15,6 +15,9 @@ Operating rules for Claude in this repo. Project state lives in files, not in ch
 - Bash on Windows: prefix Python runs with `PYTHONIOENCODING=utf-8`.
 
 ## Hard rules
+- This repo, its data and its models are mock/synthetic, for development and demonstration only (ADR-012).
+  Never copy real company data, or artifacts trained or computed on it, into this repository; results here are
+  not representative of real data, and models here are never production artifacts.
 - Never load full datasets into pandas/Python. DuckDB over Parquet, or bounded Arrow batches.
 - Every DuckDB connection comes from `netanomaly.db.connect()` (UTC, memory limit, spill dir).
   Quote every path/string interpolated into SQL with `netanomaly.db.sql_literal`.
