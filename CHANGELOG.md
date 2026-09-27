@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- docs: data boundary (repo is mock/synthetic, development only), LLM-agent tool goal, and current joblib model
+  artifact format with its limits (ADR-012 … ADR-014); open deployment questions in PROJECT_STATUS.md.
 - feat (V1-2): per-batch data-quality report `netanomaly dq` → `outputs/dq/dq_<batch>.{json,md}`: plausibility checks,
   null rates, rejects by reason, column drift vs contract, daily volume vs trailing median; also runs in `run`.
 - feat (V1-1): row-level rejects. Bad rows go to `lake/rejects/` with reason codes instead of quarantining the file;

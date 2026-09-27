@@ -5,6 +5,26 @@ _Last updated: 2026-09-27_
 ## Current milestone
 V0 — Prototype: **complete**. V1 — Ingestion and Data Quality: **in progress** (V1-1, V1-2 done).
 
+## Deployment goal and data boundary (ADR-012, ADR-013, ADR-014)
+- **Everything in this repo is development/demonstration only**: mock and synthetic data, the two committed models
+  (`data/models/iforest-20260927T191305Z`, mock; `data/synth/models/iforest-20260927T191244Z`, synthetic; both V0,
+  trained on all 6 days incl. attack days), scores, alerts, DQ reports and recall numbers. None of it represents
+  real company data.
+- The workflow moves to a separate company environment and is trained/evaluated there on real data. Do not copy
+  mock/synthetic data or these models there as production artifacts.
+- Goal: a tool a company LLM agent can invoke; the LLM orchestrates and presents, the model scores. Results stay
+  traceable to source flows; scores are rankings, not probabilities, unless calibration is demonstrated.
+- Model persistence today: joblib pickle of the scikit-learn IsolationForest + `manifest.json`, newest
+  `models/iforest-*` loaded by the CLI (details in ARCHITECTURE.md → Model artifacts). Not a final deployment format.
+
+### Open deployment questions (not scheduled)
+- Artifact format and integrity in the company environment (joblib + pinned versions + checksums, or non-pickle).
+- Manifest completeness: numpy/joblib versions, `window_minutes`, contract version, code commit, training-data lineage.
+- How the agent calls the workflow (CLI, Python API or service), with what inputs/outputs, and access control.
+- Which existing tools/skills the agent combines it with, and how results are returned (files vs structured data).
+- Where outputs and reject/DQ tables live, retention, and who may see raw flow values (IPs) through the agent.
+- Real-data prerequisites: collector documentation to validate contract fields; re-deriving thresholds.
+
 ## Completed (V1)
 - V1-1 row-level rejects: bad rows → `lake/rejects/src_<hash32>.parquet` with reason codes
   (`cast_failed`, `missing_required`, DuckDB CSV structure errors); original row numbers preserved;
@@ -34,7 +54,8 @@ ruff 0.16.9; present on HEAD before V1-1); all other files clean.
 
 ## Known issues
 - **Mock data has no host continuity** (58,311 src IPs in 60k flows; ≤2 flows per host per 5-min window).
-  Host-window/baseline features cannot be evaluated on it; use `data/synth` until real data arrives.
+  Host-window/baseline features cannot be evaluated on it; use `data/synth` here (real data is only for the
+  company environment, ADR-012).
 - **V0 model has temporal leakage by design**: it trains on and scores the same 6 days, including attack days.
   Must be fixed in V3 (time-based split, train on clean/earlier periods).
 - Field semantics unverified: `tcp_flag` (single label, not cumulative), `packet_length`, `time_code`,
@@ -56,7 +77,7 @@ ruff 0.16.9; present on HEAD before V1-1); all other files clean.
   and would only add `rejected_rows` to the ledger.
 
 ## Important decisions
-See `DECISIONS.md` (ADR-001 … ADR-011).
+See `DECISIONS.md` (ADR-001 … ADR-014).
 
 ## Next task
 V1-3: 20M-row memory test (generate, ingest + dq under memory_limit, record peak RSS). See `TODO.md`.

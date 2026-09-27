@@ -60,3 +60,32 @@ of strictly earlier calendar days (missing days count as 0). It flags; it never 
 Reason: field meanings are unverified, so a violation may be legitimate traffic or a misread field; a human decides.
 Daily volume uses only earlier days, like every other baseline in the project (no temporal leakage).
 Revisit when: collector documentation validates the fields behind a check — then that check may become a reject rule.
+
+## ADR-012: Data boundary — this repo is development/demonstration only
+Decision (owner, 2026-09-27): all data, trained models, scores, alerts, DQ reports and evaluation numbers in this
+repository come from mock or synthetic data and must not be treated as representative of real company data.
+The workflow (code, contract, tests) will be moved to a separate company environment and trained and evaluated
+there on a different, real dataset. Mock/synthetic data and models trained on them (`data/**/models/…`) must not
+be copied into that environment as production artifacts; models there are trained from scratch on its data.
+Reason: synthetic attacks are designed by us and the mock data has no host continuity, so these numbers say
+nothing about real detection quality; field meanings are still unverified against the real collector.
+Consequence: ADR-009 stays true for this repo (it never holds real traffic). Contract `validated` flags,
+thresholds (reject budget, DQ volume band, alert budget) and model settings must be re-established on real data.
+
+## ADR-013: Target use — a tool invoked by a company LLM agent
+Decision (owner, 2026-09-27): the longer-term goal is to expose this workflow as a tool that a company LLM agent
+can call alongside other tools/skills for inspecting data. The LLM orchestrates the analysis and presents
+findings; the anomaly-detection model does the scoring. The LLM must not produce or alter scores.
+Every result returned to the agent carries `model_version` and traceability to source files and `flow_id`s.
+Scores are presented as rankings ("anomalous behaviour consistent with …"), never as probabilities or confidence,
+unless calibration is later demonstrated on labelled real data; ATT&CK mappings remain hypotheses.
+Status: goal only. No tool interface, service, or agent integration is designed or implemented yet.
+
+## ADR-014: Joblib is the current development artifact format, not a deployment decision
+Decision: keep `joblib.dump`/`joblib.load` of the scikit-learn estimator plus `manifest.json` for development.
+Reason: simplest option; the model is small (~2.5 MB) and trained and scored by the same code and lock file.
+Known limits: pickle loading executes code (trusted artifacts only); scikit-learn pickles are version-sensitive;
+the preprocessing transform lives in code, not in the artifact; the manifest lacks numpy/joblib versions,
+`window_minutes`, contract version, code commit and training-data lineage.
+Revisit when: designing the company-environment deployment — choose the format there (e.g. keep joblib with pinned
+versions and integrity checks, or a non-pickle format) and extend the manifest accordingly.

@@ -66,4 +66,31 @@ Low/unknown-confidence columns cannot be features (enforced on load). `SCHEMA.md
 
 ## Model outputs
 `anomaly_score = -IsolationForest.score_samples(x)`: a ranking within a model version, not a probability.
+
+## Model artifacts (current, development only)
+- `train` writes `models/iforest-<UTC timestamp>/model.joblib` + `manifest.json`; there is no fixed
+  `models/model.joblib`. With `--root DIR`, models live under `DIR/models/`.
+- `model.joblib` is a `joblib.dump` (pickle) of a fitted scikit-learn `IsolationForest` only (200 trees,
+  `max_samples` 256, 9 inputs). It is fit on a plain NumPy array, so it has no `feature_names_in_`: column order
+  comes solely from `manifest.features`. The `log1p` / NaN→0 transform is code (`iforest.transform`), not part of
+  the artifact. Tree split thresholds are values derived from the training features, so an artifact trained on
+  real data carries information about that data.
+- `manifest.json` records model_version, features, log1p_features, train_rows, train_period, ModelSettings,
+  sklearn and Python versions, created_at. It does **not** record numpy/joblib versions, `window_minutes`,
+  contract version, code commit, or which lake batches/feature files were used.
+- Loading (`cli._latest_model`): picks the lexicographically last `models/iforest-*` (= newest UTC timestamp),
+  `joblib.load`s it and reads the manifest. No check that installed library versions match the manifest.
+- Traceability: `scores.parquet` rows carry `model_version`; `top_alerts.csv` joins each top host-window back to
+  the lake (`src_ip` + window) for `source_files` and sample `flow_id`s.
+- Portability: loading a pickle executes code, so only artifacts from a trusted pipeline may be loaded.
+  scikit-learn does not guarantee that pickles load or behave identically across versions, so scoring must use
+  the versions in the manifest (pinned in `uv.lock`). Joblib is **not** a decided deployment format (ADR-014).
+- The committed artifacts (`data/models/…`, `data/synth/models/…`) come from the V0 mock/synthetic workflow and
+  are demonstration artifacts only (ADR-012).
+
+## Deployment target (not implemented)
+The workflow is to be re-run in a separate company environment on real data (ADR-012) and exposed as a tool that
+a company LLM agent can invoke alongside other data tools (ADR-013). Division of labour: the model and the
+pipeline compute features, scores and top-K rankings; the LLM orchestrates calls and explains results. Every
+finding stays traceable to `model_version`, source files and `flow_id`s. No interface is designed yet.
 Alerts = top-K host-windows per UTC day (alert budget), each with source files and sample `flow_id`s.
