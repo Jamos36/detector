@@ -40,6 +40,17 @@ def test_contract_covers_every_raw_column(contract, sample_csv):
     assert contract.check_columns(header) == ([], [])
 
 
+def test_schema_md_is_generated_from_contract(contract):
+    schema_md = Path(__file__).parent.parent / "SCHEMA.md"
+    assert schema_md.read_text(encoding="utf-8") == contract.to_markdown(), "run: uv run netanomaly schema-doc"
+
+
+def test_no_field_is_marked_validated_without_collector_docs(contract):
+    # Flip a field to validated only when its meaning is confirmed from the exporter's
+    # documentation, then update this test with the confirmed fields.
+    assert [c.raw for c in contract.columns if c.validated] == []
+
+
 def test_low_confidence_columns_are_never_model_features(contract):
     for col in contract.columns:
         if col.confidence in (Confidence.LOW, Confidence.UNKNOWN):

@@ -108,6 +108,12 @@ def cmd_evaluate(args: argparse.Namespace, s: Settings) -> None:
             log.info("recall@%-4d %-16s %d/%d  best rank %s", k, attack, found, total, best)
 
 
+def cmd_schema_doc(args: argparse.Namespace, s: Settings) -> None:
+    out = Path(args.config).resolve().parent / "SCHEMA.md"
+    out.write_text(load_contract().to_markdown(), encoding="utf-8")
+    log.info("wrote %s", out)
+
+
 def cmd_run(args: argparse.Namespace, s: Settings) -> None:
     for step in (cmd_ingest, cmd_features, cmd_train, cmd_score, cmd_alerts):
         step(args, s)
@@ -127,7 +133,8 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--format", choices=("parquet", "csv"), default="parquet")
     g.set_defaults(func=cmd_generate)
     for name, func in (("ingest", cmd_ingest), ("features", cmd_features), ("train", cmd_train),
-                       ("score", cmd_score), ("alerts", cmd_alerts), ("run", cmd_run)):
+                       ("score", cmd_score), ("alerts", cmd_alerts), ("run", cmd_run),
+                       ("schema-doc", cmd_schema_doc)):
         sub.add_parser(name).set_defaults(func=func)
     e = sub.add_parser("evaluate", help="recall@K against injected attacks (synthetic data only)")
     e.add_argument("--k", type=int, nargs="+", default=[50, 100, 500])
