@@ -1,0 +1,106 @@
+# Schema contract + data dictionary for the raw NetFlow export (42 columns).
+#
+# Meanings are INFERRED from standard NetFlow v9 / IPFIX field definitions and
+# from profiling the mock data. Nobody has yet confirmed them against the
+# collector's documentation.
+#
+# confidence: high    - name + values match a standard field unambiguously
+#             medium  - plausible standard mapping, values partly consistent
+#             low     - guess; values contradict or do not identify the field
+#             unknown - no defensible interpretation
+#
+# model_use:  entity     - identifies who/what (grouping key; never a numeric feature)
+#             feature    - may feed behavioral features
+#             derive     - only used to derive other columns
+#             provenance - kept for traceability, never modelled
+#             exclude    - constant, redundant, or semantics too uncertain
+#
+# Only columns with confidence high/medium may be used as `feature`.
+schema_version: 1
+name: netflow_v1
+
+columns:
+  - {raw: src_id_addr, name: src_ip, type: VARCHAR, model_use: entity, confidence: high,
+     meaning: "Source IPv4 address (sourceIPv4Address). 'id_addr' looks like a typo for 'ip_addr'."}
+  - {raw: src_subnet, name: src_subnet, type: VARCHAR, model_use: entity, confidence: high,
+     meaning: "Source network in CIDR form; derivable from src_ip + src_mask."}
+  - {raw: src_port, name: src_port, type: INTEGER, model_use: derive, confidence: high,
+     meaning: "Source transport port (sourceTransportPort). 0 for ICMP. Never used as a magnitude."}
+  - {raw: src_mask, name: src_mask, type: SMALLINT, model_use: exclude, confidence: high,
+     meaning: "Source prefix length (sourceIPv4PrefixLength). Constant 24 in mock data."}
+  - {raw: src_as, name: src_as, type: BIGINT, model_use: provenance, confidence: high,
+     meaning: "Source BGP autonomous system number. Values are private-use ASNs (64512-65534)."}
+  - {raw: dist_id_addr, name: dst_ip, type: VARCHAR, model_use: entity, confidence: high,
+     meaning: "Destination IPv4 address. 'dist' = destination."}
+  - {raw: dist_subnet, name: dst_subnet, type: VARCHAR, model_use: entity, confidence: high,
+     meaning: "Destination network in CIDR form."}
+  - {raw: dist_port, name: dst_port, type: INTEGER, model_use: derive, confidence: high,
+     meaning: "Destination transport port. Identifies the service (443, 53, 445...). Used as class/rarity, never as a magnitude."}
+  - {raw: dist_mask, name: dst_mask, type: SMALLINT, model_use: exclude, confidence: high,
+     meaning: "Destination prefix length. Constant 24 in mock data."}
+  - {raw: dist_as, name: dst_as, type: BIGINT, model_use: provenance, confidence: high,
+     meaning: "Destination ASN. 64496-64511 is the RFC 5398 documentation range, which suggests synthetic data."}
+  - {raw: pair_socket, name: pair_socket, type: VARCHAR, model_use: exclude, confidence: high,
+     meaning: "'src_ip:src_port->dst_ip:dst_port' string. Fully derivable (verified: 0 mismatches)."}
+  - {raw: pair_ip, name: pair_ip, type: VARCHAR, model_use: exclude, confidence: high,
+     meaning: "'src_ip->dst_ip' string. Derivable."}
+  - {raw: device_ip_addr, name: exporter_ip, type: VARCHAR, model_use: provenance, confidence: medium,
+     meaning: "IP of the device (router/sensor) that exported the flow. Real networks have a handful; mock data has ~58k (random)."}
+  - {raw: ip_version, name: ip_version, type: SMALLINT, model_use: exclude, confidence: high,
+     meaning: "IP version. Constant 4."}
+  - {raw: ip_version_name, name: ip_version_name, type: VARCHAR, model_use: exclude, confidence: high,
+     meaning: "Text form of ip_version. Redundant."}
+  - {raw: ip_version_id, name: ip_version_id, type: SMALLINT, model_use: exclude, confidence: high,
+     meaning: "Duplicate of ip_version."}
+  - {raw: ip_class_of_service, name: ip_class_of_service, type: SMALLINT, model_use: exclude, confidence: medium,
+     meaning: "QoS marking. Values {0,8,...,56,46} are DSCP code points (46 = Expedited Forwarding), not the raw ToS byte. Uniform in mock data; revisit with real data."}
+  - {raw: ip_protocol_id, name: protocol, type: SMALLINT, model_use: feature, confidence: high,
+     meaning: "IANA protocol number: 1 ICMP, 6 TCP, 17 UDP."}
+  - {raw: ip_protocol_full_name, name: protocol_full_name, type: VARCHAR, model_use: exclude, confidence: high,
+     meaning: "Text form of protocol. Redundant."}
+  - {raw: ip_protocol_name, name: protocol_name, type: VARCHAR, model_use: exclude, confidence: high,
+     meaning: "Short text form of protocol (TCP/UDP/ICMP). Redundant; kept for readable reports."}
+  - {raw: next_hop_id_addr, name: next_hop_ip, type: VARCHAR, model_use: provenance, confidence: medium,
+     meaning: "Next-hop router IP (ipNextHopIPv4Address). Random in mock data."}
+  - {raw: observation_domain_id, name: observation_domain_id, type: INTEGER, model_use: provenance, confidence: high,
+     meaning: "IPFIX observation domain: which metering process/line card on the exporter saw the flow."}
+  - {raw: packet_length, name: packet_length, type: INTEGER, model_use: exclude, confidence: low,
+     meaning: "UNKNOWN exact semantics. Tracks bytes/packets within ~12% on average (corr 0.97) but is not equal to it. Excluded; use num_bytes/num_packets instead."}
+  - {raw: icmp_type_id, name: icmp_type, type: SMALLINT, model_use: feature, confidence: high,
+     meaning: "ICMP type (0 echo reply, 3 dest unreachable, 8 echo request, 11 time exceeded). -1 = not ICMP."}
+  - {raw: ingress_id, name: ingress_if, type: INTEGER, model_use: provenance, confidence: high,
+     meaning: "Input interface index (ingressInterface / SNMP ifIndex) on the exporter."}
+  - {raw: egress_id, name: egress_if, type: INTEGER, model_use: provenance, confidence: high,
+     meaning: "Output interface index. ingress == egress (hairpin) occurs in 935 mock flows."}
+  - {raw: tcp_flag, name: tcp_flags, type: VARCHAR, model_use: derive, confidence: low,
+     meaning: "TCP flags as a text label (SYN, SYN-ACK, ACK, PSH-ACK, FIN-ACK, ACK-PSH-FIN, RST); NULL for UDP/ICMP. In standard NetFlow this is the OR of every flag seen in the flow, but mock 'SYN' flows carry a median of 14 packets, so here it may be a single sampled packet. Parsed into flag bits; features built on it must hold under both readings."}
+  - {raw: num_bytes, name: bytes, type: BIGINT, model_use: feature, confidence: high,
+     meaning: "Bytes in the flow, one direction (octetDeltaCount). Flows are unidirectional: no reverse flows exist."}
+  - {raw: num_packets, name: packets, type: BIGINT, model_use: feature, confidence: high,
+     meaning: "Packets in the flow, one direction (packetDeltaCount)."}
+  - {raw: ttl_min, name: ttl_min, type: SMALLINT, model_use: feature, confidence: high,
+     meaning: "Minimum IP TTL seen. Values 32/64/128 hint at the sender's OS family (Linux 64, Windows 128)."}
+  - {raw: ttl_max, name: ttl_max, type: SMALLINT, model_use: feature, confidence: high,
+     meaning: "Maximum IP TTL seen. Never below ttl_min (verified)."}
+  - {raw: flow_start_time, name: flow_start, type: TIMESTAMPTZ, model_use: feature, confidence: high,
+     meaning: "First packet time, UTC. Nanoseconds in source are truncated to microseconds."}
+  - {raw: flow_end_time, name: flow_end, type: TIMESTAMPTZ, model_use: derive, confidence: high,
+     meaning: "Last packet time, UTC. Never before flow_start (verified)."}
+  - {raw: flow_end_reason, name: flow_end_reason, type: VARCHAR, model_use: feature, confidence: medium,
+     meaning: "Why the exporter closed the flow (IPFIX flowEndReason): idle_timeout, active_timeout, end_of_flow (FIN/RST seen), forced_end. In mock data it is independent of the TCP flags, which it should not be."}
+  - {raw: flow_sequence, name: flow_sequence, type: BIGINT, model_use: provenance, confidence: medium,
+     meaning: "Export sequence counter. Globally unique 1..60000 in mock data; real exporters restart it per exporter/domain."}
+  - {raw: flow_set_id, name: flow_set_id, type: INTEGER, model_use: provenance, confidence: high,
+     meaning: "NetFlow v9/IPFIX template (FlowSet) ID; data templates use 256+ (mock range 256-1023 matches)."}
+  - {raw: flow_length, name: duration_ms_reported, type: BIGINT, model_use: exclude, confidence: high,
+     meaning: "Equals (flow_end - flow_start) in milliseconds (corr 1.0). NOT a byte length. Redundant with derived duration."}
+  - {raw: vlad_id, name: vlan_id, type: INTEGER, model_use: provenance, confidence: medium,
+     meaning: "VLAN ID ('vlad' looks like a typo for 'vlan'). Values 1-300."}
+  - {raw: vlad_id_dot, name: vlan_id_dot1q, type: DOUBLE, model_use: exclude, confidence: medium,
+     meaning: "802.1Q VLAN ID stored as float; always equals vlan_id in mock data."}
+  - {raw: vlad_id_customer, name: vlan_id_customer, type: INTEGER, model_use: exclude, confidence: low,
+     meaning: "Customer VLAN (QinQ inner tag). 66% of mock values exceed 4094, the maximum valid VLAN ID, so the values are not trustworthy."}
+  - {raw: time_stamp, name: export_time, type: TIMESTAMPTZ, model_use: provenance, confidence: medium,
+     meaning: "Probably when the record was exported/observed: flow_end + 0-2 s in mock data."}
+  - {raw: time_code, name: time_code, type: VARCHAR, model_use: exclude, confidence: unknown,
+     meaning: "UNKNOWN. Mixes UTC / FLOW_END / INGEST / EXPORT. Not a timezone. Carried through but never modelled."}

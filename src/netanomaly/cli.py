@@ -1,0 +1,145 @@
+"""Command-line entry point: `uv run netanomaly <command>`.
+
+Each stage reads the previous stage's files from disk, so any stage can be
+re-run on its own. `--root DIR` points every path at DIR/{raw,lake,...},
+which keeps separate datasets (mock vs synthetic) in separate lakes.
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+import logging
+from datetime import date, timedelta
+from pathlib import Path
+
+import joblib
+
+from netanomaly import alerts, features, iforest
+from netanomaly.config import Paths, Settings, load_settings
+from netanomaly.db import connect
+from netanomaly.ingest import ingest_directory
+from netanomaly.inject import InjectionLog, make_injector
+from netanomaly.schema import load_contract
+from netanomaly.synth import generate
+
+log = logging.getLogger("netanomaly")
+SCORES_FILE = "scores.parquet"
+ALERTS_FILE = "top_alerts.csv"
+
+
+def _settings(args: argparse.Namespace) -> Settings:
+    s = load_settings(Path(args.config))
+    if args.root:
+        root = Path(args.root).resolve()
+        s = s.model_copy(update={"paths": Paths(**{k: root / k for k in Paths.model_fields})})
+    return s
+
+
+def _host_window_dir(s: Settings) -> Path:
+    return s.paths.features / "host_window"
+
+
+def _truth_dir(s: Settings) -> Path:
+    return s.paths.raw.parent / "truth"
+
+
+def _latest_model(s: Settings) -> tuple[object, iforest.ModelManifest]:
+    versions = sorted(s.paths.models.glob("iforest-*"))
+    if not versions:
+        raise SystemExit("no trained model found; run `netanomaly train` first")
+    manifest = iforest.ModelManifest(**json.loads((versions[-1] / "manifest.json").read_text(encoding="utf-8")))
+    return joblib.load(versions[-1] / "model.joblib"), manifest
+
+
+def cmd_generate(args: argparse.Namespace, s: Settings) -> None:
+    truth = _truth_dir(s)
+    injection_log = InjectionLog()
+    start = date.fromisoformat(args.start)
+    attack_days = {start + timedelta(days=d) for d in range(args.clean_days, args.days)}
+    generate(s.paths.raw, truth, days=args.days, n_hosts=args.hosts, seed=args.seed, start=start,
+             fmt=args.format, injector=make_injector(injection_log, attack_days))
+    fields = list(injection_log.records[0]) if injection_log.records else ["injection_id", "attack_type"]
+    with (truth / "injections.csv").open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(injection_log.records)
+    log.info("generated %d days (%d attack days, %d injections) -> %s; truth -> %s",
+             args.days, len(attack_days), len(injection_log.records), s.paths.raw, truth)
+
+
+def cmd_ingest(args: argparse.Namespace, s: Settings) -> None:
+    con = connect(s.duckdb)
+    for e in ingest_directory(con, s.paths.raw, load_contract(), s.paths.lake, s.duckdb.temp_directory / "stage"):
+        log.info("%-40s %-18s rows=%-8d %s", e.source_file, e.status, e.rows, e.reason)
+
+
+def cmd_features(args: argparse.Namespace, s: Settings) -> None:
+    rows = features.build_host_window(connect(s.duckdb), s.paths.lake, _host_window_dir(s), s.window_minutes)
+    log.info("host-window feature rows: %d", rows)
+
+
+def cmd_train(args: argparse.Namespace, s: Settings) -> None:
+    _, manifest, out = iforest.train(connect(s.duckdb), _host_window_dir(s), list(features.HOST_WINDOW_FEATURES),
+                                     s.model, s.paths.models)
+    log.info("trained %s on %d rows -> %s", manifest.model_version, manifest.train_rows, out)
+
+
+def cmd_score(args: argparse.Namespace, s: Settings) -> None:
+    model, manifest = _latest_model(s)
+    n = iforest.score(connect(s.duckdb), _host_window_dir(s), model, manifest, s.paths.outputs / SCORES_FILE,
+                      s.batch_rows)
+    log.info("scored %d rows with %s", n, manifest.model_version)
+
+
+def cmd_alerts(args: argparse.Namespace, s: Settings) -> None:
+    out = s.paths.outputs / ALERTS_FILE
+    n = alerts.write_top_alerts(connect(s.duckdb), s.paths.outputs / SCORES_FILE, s.paths.lake,
+                                s.alert_budget_per_day, s.window_minutes, out)
+    log.info("wrote %d alerts (budget %d/day) -> %s", n, s.alert_budget_per_day, out)
+
+
+def cmd_evaluate(args: argparse.Namespace, s: Settings) -> None:
+    con = connect(s.duckdb)
+    for k in args.k:
+        for attack, found, total, best in alerts.recall_at_k(con, s.paths.outputs / SCORES_FILE, s.paths.lake,
+                                                             _truth_dir(s), k, s.window_minutes):
+            log.info("recall@%-4d %-16s %d/%d  best rank %s", k, attack, found, total, best)
+
+
+def cmd_run(args: argparse.Namespace, s: Settings) -> None:
+    for step in (cmd_ingest, cmd_features, cmd_train, cmd_score, cmd_alerts):
+        step(args, s)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="netanomaly", description=__doc__)
+    p.add_argument("--config", default="config.yaml")
+    p.add_argument("--root", help="dataset root; overrides every path to ROOT/{raw,lake,features,models,outputs}")
+    sub = p.add_subparsers(dest="command", required=True)
+    g = sub.add_parser("generate", help="write synthetic raw data with persistent hosts and injected attacks")
+    g.add_argument("--days", type=int, default=6)
+    g.add_argument("--clean-days", type=int, default=3, help="leading days with no injected attacks")
+    g.add_argument("--hosts", type=int, default=300)
+    g.add_argument("--seed", type=int, default=7)
+    g.add_argument("--start", default="2026-09-01")
+    g.add_argument("--format", choices=("parquet", "csv"), default="parquet")
+    g.set_defaults(func=cmd_generate)
+    for name, func in (("ingest", cmd_ingest), ("features", cmd_features), ("train", cmd_train),
+                       ("score", cmd_score), ("alerts", cmd_alerts), ("run", cmd_run)):
+        sub.add_parser(name).set_defaults(func=func)
+    e = sub.add_parser("evaluate", help="recall@K against injected attacks (synthetic data only)")
+    e.add_argument("--k", type=int, nargs="+", default=[50, 100, 500])
+    e.set_defaults(func=cmd_evaluate)
+    return p
+
+
+def main(argv: list[str] | None = None) -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    args = build_parser().parse_args(argv)
+    args.func(args, _settings(args))
+
+
+if __name__ == "__main__":
+    main()
