@@ -120,3 +120,19 @@ Reason: there is no real exporter data or collector documentation to confirm uni
 numbers are per exporter/observation domain and can reset or wrap, and several exporters feed one lake.
 Revisit when: collector documentation defines the field. Even then, key on (exporter, domain, sequence) only if the
 documentation guarantees uniqueness of that tuple; `flow_id` remains the lake key.
+
+## ADR-017: Feature registry; eligibility is computed from the contract
+Decision: candidate features live in a versioned registry (`contracts/features_v1.yaml`) with inputs, level,
+transform, temporal scope, rationale and ATT&CK hypotheses. Whether a feature is usable is computed from the
+schema contract: every source column (derived columns expanded to their contract sources) must have confidence
+high/medium and model_use entity/feature/derive. The registry cannot declare confidence, validated or eligibility.
+`validated` is tracked per source and feature but does not gate usability yet; every usable feature is therefore
+provisional, and real-data use needs validated sources (real-data onboarding prerequisite).
+Consequence: V0 `syn_only_ratio` and `rst_ratio` are **not usable** (derived from `tcp_flags`, confidence low:
+the label may be one sampled packet, not the OR of the flow's flags). The V0 model still trains on them; changing
+the model's feature set is left to V3, so this task does not alter scores.
+Reason: the contract already gated `model_use: feature` columns by confidence, but derived columns (`tcp_*`) let
+low-confidence fields reach the model unchecked. Computing eligibility from one source of truth keeps registry
+and contract from disagreeing.
+Revisit when: collector documentation validates fields (then consider requiring `validated` for usability), or a
+feature needs a source rule beyond confidence/model_use.

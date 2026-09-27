@@ -17,7 +17,8 @@ Cannot be done in this mock/synthetic repo (ADR-012); must be completed before a
 - [x] V1-5 flow_sequence is not unique in real exporters — do not rely on it outside synthetic evaluation (ADR-016).
 
 ## V2 — Feature research
-- [ ] Feature registry (required columns, level, transform, rationale, ATT&CK hypothesis).
+- [x] V2-1 Feature registry (required columns, level, transform, rationale, ATT&CK hypothesis) — ADR-017,
+      `contracts/features_v1.yaml`, generated `FEATURES.md`.
 - [ ] Host baselines from strictly prior data (median/MAD) + leakage test; peer-group fallback + baseline_quality.
 - [ ] New-destination / new-port rates (persistent seen-set, prior data only).
 - [ ] Timing regularity over ≥1 h windows (beaconing).
@@ -25,6 +26,8 @@ Cannot be done in this mock/synthetic repo (ADR-012); must be completed before a
 
 ## V3 — Isolation Forest
 - [ ] Time-based train/score split (fix V0 leakage); sample-size stability curve; seed stability.
+- [ ] Train only on registry-usable features: drop or replace V0 `syn_only_ratio` / `rst_ratio`
+      (`tcp_flags`, confidence low; ADR-017) and have the pipeline read the feature set from the registry.
 
 ## V4 — Evaluation
 - [ ] Attack intensity sweeps; recall@K 50/100/500; robust-z and rule baselines; top-K Jaccard across seeds.

@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- feat (V2-1): versioned feature registry `contracts/features_v1.yaml` (19 features: 9 implemented V0, 10 candidates)
+  with inputs, level, transform, temporal scope, rationale and ATT&CK hypotheses. Eligibility is computed from the
+  contract (ADR-017): 16 usable (all provisional, 0 on validated fields), 3 not usable — incl. V0 `syn_only_ratio`
+  and `rst_ratio` (`tcp_flags`, low confidence), still used by the V0 model until V3. `netanomaly feature-doc`
+  generates `FEATURES.md`.
 - docs: V1 implementation complete on mock/synthetic data; collector documentation moved out of the V1 checklist
   into a "real-data onboarding — external prerequisite" section (semantic validation pending, 0/42 validated).
 - fix (V1-5): `flow_sequence` is not a key (ADR-016). Audit found no production use; synthetic recall@K, the only

@@ -12,6 +12,7 @@ import pytest
 from netanomaly import alerts, features, iforest
 from netanomaly.cli import main
 from netanomaly.config import ModelSettings
+from netanomaly.feature_registry import load_registry
 from netanomaly.ingest import ingest_directory
 from netanomaly.inject import ATTACKS, InjectionLog, make_injector
 from netanomaly.synth import generate
@@ -54,6 +55,18 @@ def test_hosts_persist_and_flags_are_consistent(synth_root, con):
     assert flows_per_host > 100  # the whole point: hosts recur
     assert max_syn <= 3
     assert inconsistent == 0
+
+
+def test_registry_inputs_exist_in_the_lake(synth_root, con):
+    registry = load_registry()
+    lake_columns = {r[0] for r in con.sql(
+        f"DESCRIBE SELECT * FROM read_parquet('{features.flows_glob(synth_root / 'lake')}', hive_partitioning = true)"
+    ).fetchall()}
+    inputs = {i for f in registry.features for i in f.inputs}
+    assert inputs <= lake_columns
+    assert {d.name for d in registry.derived_columns} <= lake_columns
+    host_window = pq.read_schema(next((synth_root / "features" / "host_window").rglob("*.parquet"))).names
+    assert set(features.HOST_WINDOW_FEATURES) <= set(host_window)
 
 
 def test_injection_truth_points_at_injected_flows(tmp_path, con, contract):

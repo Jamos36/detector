@@ -16,7 +16,7 @@ from pathlib import Path
 
 import joblib
 
-from netanomaly import alerts, features, iforest, quality
+from netanomaly import alerts, feature_registry, features, iforest, quality
 from netanomaly.config import Paths, Settings, load_settings
 from netanomaly.db import connect
 from netanomaly.ingest import ingest_directory
@@ -133,6 +133,13 @@ def cmd_schema_doc(args: argparse.Namespace, s: Settings) -> None:
     log.info("wrote %s", out)
 
 
+def cmd_feature_doc(args: argparse.Namespace, s: Settings) -> None:
+    out = Path(args.config).resolve().parent / "FEATURES.md"
+    registry = feature_registry.load_registry()
+    out.write_text(feature_registry.to_markdown(registry, load_contract(registry.contract)), encoding="utf-8")
+    log.info("wrote %s", out)
+
+
 def cmd_run(args: argparse.Namespace, s: Settings) -> None:
     for step in (cmd_ingest, cmd_dq, cmd_features, cmd_train, cmd_score, cmd_alerts):
         step(args, s)
@@ -153,7 +160,7 @@ def build_parser() -> argparse.ArgumentParser:
     g.set_defaults(func=cmd_generate)
     for name, func in (("ingest", cmd_ingest), ("features", cmd_features), ("train", cmd_train),
                        ("score", cmd_score), ("alerts", cmd_alerts), ("run", cmd_run),
-                       ("schema-doc", cmd_schema_doc)):
+                       ("schema-doc", cmd_schema_doc), ("feature-doc", cmd_feature_doc)):
         sub.add_parser(name).set_defaults(func=func)
     q = sub.add_parser("dq", help="data-quality report for one ingest batch -> outputs/dq/dq_<batch>.{json,md}")
     q.add_argument("--batch", help="ingest_batch_id to report on (default: newest in the ledger)")

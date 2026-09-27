@@ -10,7 +10,7 @@ Operating rules for Claude in this repo. Project state lives in files, not in ch
 ## Commands
 - `uv run pytest -q` — all tests (must pass before any commit)
 - `uv run ruff check src tests`
-- `uv run netanomaly [--root DIR] generate|ingest|features|train|score|alerts|evaluate|run|schema-doc`
+- `uv run netanomaly [--root DIR] generate|ingest|features|train|score|alerts|evaluate|run|schema-doc|feature-doc`
 - Synthetic data lives under `--root data/synth`; mock data under `data/`.
 - Bash on Windows: prefix Python runs with `PYTHONIOENCODING=utf-8`.
 
@@ -23,7 +23,8 @@ Operating rules for Claude in this repo. Project state lives in files, not in ch
   Quote every path/string interpolated into SQL with `netanomaly.db.sql_literal`.
 - Never assume a field's meaning from its name. The contract
   (`src/netanomaly/contracts/netflow_v1.yaml`) is the source of truth; `validated: true` only
-  with collector documentation. Regenerate `SCHEMA.md` with `schema-doc` after contract edits.
+  with collector documentation. Regenerate `SCHEMA.md` with `schema-doc` after contract edits,
+  and `FEATURES.md` with `feature-doc` after contract or feature-registry edits.
 - No temporal leakage: baselines, normalizers and novelty features at time t use only data before t.
   Train/evaluate splits are by time. Add a test that future rows cannot change earlier values.
 - Scores are rankings, not probabilities. Say "anomalous behavior consistent with…";

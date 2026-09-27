@@ -5,7 +5,7 @@ _Last updated: 2026-09-27_
 ## Current milestone
 V0 — Prototype: **complete**. V1 — Ingestion and Data Quality: **implementation complete** (V1-1 … V1-5
 implemented and tested on mock/synthetic data). **Real-exporter semantic validation: pending** — an external
-prerequisite for real-data use, not a V1 task (see below). V2 not started.
+prerequisite for real-data use, not a V1 task (see below). V2 — Feature research: **in progress** (V2-1 done).
 
 ## Real-data onboarding — external prerequisite (pending)
 - Exporter/collector documentation is needed to validate field meanings before any real-data use. It cannot be
@@ -33,6 +33,19 @@ prerequisite for real-data use, not a V1 task (see below). V2 not started.
 - Which existing tools/skills the agent combines it with, and how results are returned (files vs structured data).
 - Where outputs and reject/DQ tables live, retention, and who may see raw flow values (IPs) through the agent.
 - Real-data prerequisites: collector documentation to validate contract fields; re-deriving thresholds.
+
+## Completed (V2)
+- V2-1 feature registry (ADR-017): `src/netanomaly/contracts/features_v1.yaml` (registry_version 1, bound to
+  `netflow_v1` schema version 1) + `src/netanomaly/feature_registry.py`; generated `FEATURES.md`
+  (`netanomaly feature-doc`, drift-tested). 19 features: the 9 implemented V0 host-window features and 10
+  candidates (flow-level `bytes_per_packet`, `flow_duration`; host-window `icmp_echo_ratio`, `dns_flow_ratio`,
+  `active_timeout_ratio`, `mean_packet_length`; later tasks `bytes_out_robust_z` (V2-2), `new_dst_ip_rate` /
+  `new_dst_port_rate` (V2-3), `interarrival_cv` (V2-4)). Eligibility is computed from the contract, never declared:
+  **16 usable** (all provisional — 0 rest only on validated fields), **3 not usable**: `syn_only_ratio`,
+  `rst_ratio` (`tcp_flags`, confidence low) and `mean_packet_length` (`packet_length`, low + exclude).
+  The two V0 features stay in the V0 model (no model change); V3 must drop or replace them.
+  Inputs checked against the committed `data/lake` and `data/synth/lake` (none missing) and a fresh synthetic lake
+  in tests. Candidates are descriptions only; nothing new is computed.
 
 ## Completed (V1)
 - V1-5 `flow_sequence` is not a key (ADR-016). Audit of `src/`, `scripts/` and `tests/`: no production step
@@ -90,7 +103,8 @@ prerequisite for real-data use, not a V1 task (see below). V2 not started.
 - Code review: 2 CRITICAL + 2 HIGH findings fixed with regression tests.
 
 ## Tests
-108 passing, 0 failing (3 new for V1-5; 46 in `tests/test_timestamps.py`; 3 are tiny-scale smoke tests of `scripts/memtest.py`; the 20M-row run is manual). ruff: 3 pre-existing ISC004 findings in `schema.py` (rule new in
+130 passing, 0 failing (22 new for V2-1: 21 in `tests/test_feature_registry.py`, 1 lake check in
+`tests/test_synth_pipeline.py`; 46 in `tests/test_timestamps.py`; 3 are tiny-scale smoke tests of `scripts/memtest.py`; the 20M-row run is manual). ruff: 3 pre-existing ISC004 findings in `schema.py` (rule new in
 ruff 0.16.9; present on HEAD before V1-1); all other files clean.
 
 ## Known issues
@@ -129,13 +143,18 @@ ruff 0.16.9; present on HEAD before V1-1); all other files clean.
 - V1-5 limits: uniqueness of `flow_sequence` in real exports is still unknown, and no DQ check measures it
   (e.g. duplicates per exporter/observation domain); it only matters if a future step wants it as a key.
   The source-scan test matches the literal name only.
+- V2-1 limits: the pipeline does not read the registry yet (V0 feature list and log1p set are kept in sync by
+  tests); the V0 model trains on two not-usable features (`syn_only_ratio`, `rst_ratio`) until V3. Usability does
+  not require `validated` (0/42), so every usable feature is provisional. ATT&CK entries are unreviewed hypotheses.
+  Candidate transforms are prose, not executable, and are not yet checked against data (feature cards, V2-5).
 - Existing `data/lake` and `data/synth/lake` were built by V0 code; re-ingest is not needed (output is identical)
   and would only add `rejected_rows` to the ledger.
 
 ## Important decisions
-See `DECISIONS.md` (ADR-001 … ADR-016).
+See `DECISIONS.md` (ADR-001 … ADR-017).
 
 ## Next task
-V1 implementation is complete; real-exporter semantic validation stays pending as an external prerequisite
-(owner, outside this repo). Next: owner decides when to start V2 (feature research, see `TODO.md`); V2 work here
-remains on mock/synthetic data and must not treat unvalidated field meanings as confirmed.
+V2-2: host baselines from strictly prior data (median/MAD) with a leakage test, peer-group fallback and
+`baseline_quality`, starting from the registry's `bytes_out_robust_z` entry (see `TODO.md`). Mock/synthetic data
+only; unvalidated field meanings stay provisional. Real-exporter semantic validation remains an external
+prerequisite.

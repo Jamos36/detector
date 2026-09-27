@@ -1,0 +1,221 @@
+# Feature registry (V2-1): every candidate behavioural feature, what it is computed from, and why.
+#
+# This file records DESIGN INTENT only. It never states whether a source field is trustworthy:
+# confidence, validated and model_use come from the schema contract (netflow_v1.yaml) and eligibility is
+# COMPUTED from it by `netanomaly.feature_registry` (see FEATURES.md, generated). Fields such as
+# `confidence`, `validated` or `eligible` are rejected here on load.
+#
+# level:          flow        - one value per flow
+#                 host_window - one value per (src_ip, time window); window length in `transform`
+# status:         implemented - computed by the current pipeline (V0: features.HOST_WINDOW_FEATURES)
+#                 candidate   - not implemented; `task` names the roadmap task that would build it, if scheduled
+# temporal_scope: window        - uses only rows inside its own flow/window (default)
+#                 prior_history - also uses history, which must be strictly earlier than the window (no leakage)
+# inputs:         canonical contract columns, or lake columns declared under `derived_columns`
+# attack_hypotheses: ATT&CK techniques the feature MIGHT help surface. Hypotheses, not detections: a high value
+#                 is "anomalous behaviour consistent with" the technique, never evidence of it.
+# model_transform: transform applied by the model code before training (iforest.transform), if any.
+registry_version: 1
+contract: netflow_v1
+contract_schema_version: 1
+
+derived_columns:
+  - {name: duration_s, sources: [flow_start, flow_end], transform: "epoch(flow_end - flow_start), seconds"}
+  - {name: tcp_syn, sources: [tcp_flags], transform: "'SYN' in string_split(tcp_flags, '-'); false when NULL"}
+  - {name: tcp_ack, sources: [tcp_flags], transform: "'ACK' in string_split(tcp_flags, '-'); false when NULL"}
+  - {name: tcp_rst, sources: [tcp_flags], transform: "'RST' in string_split(tcp_flags, '-'); false when NULL"}
+  - {name: dst_is_private, sources: [dst_ip], transform: "dst_ip matches RFC 1918 (10/8, 172.16/12, 192.168/16)"}
+
+features:
+  # --- implemented (V0 host x 5-minute window, features.py) ------------------------------------------------
+  - name: flows
+    level: host_window
+    status: implemented
+    inputs: [src_ip, flow_start]
+    transform: "count(*) per (src_ip, 5-minute bucket of flow_start)"
+    model_transform: log1p
+    rationale: "Overall activity level; bursts far above the host's usual rate stand out."
+    attack_hypotheses:
+      - {technique: T1046, name: Network Service Discovery}
+      - {technique: T1498, name: Network Denial of Service}
+
+  - name: bytes_out
+    level: host_window
+    status: implemented
+    inputs: [src_ip, flow_start, bytes]
+    transform: "sum(bytes) per (src_ip, 5-minute window); flows are unidirectional, so bytes sent by src_ip"
+    model_transform: log1p
+    rationale: "Outbound volume; large transfers from hosts that usually send little."
+    attack_hypotheses:
+      - {technique: T1048, name: Exfiltration Over Alternative Protocol}
+      - {technique: T1041, name: Exfiltration Over C2 Channel}
+
+  - name: packets_out
+    level: host_window
+    status: implemented
+    inputs: [src_ip, flow_start, packets]
+    transform: "sum(packets) per (src_ip, 5-minute window)"
+    model_transform: log1p
+    rationale: "Packet rate; separates many small packets (floods, scans) from few large ones."
+    attack_hypotheses:
+      - {technique: T1498, name: Network Denial of Service}
+
+  - name: uniq_dst_ip
+    level: host_window
+    status: implemented
+    inputs: [src_ip, flow_start, dst_ip]
+    transform: "count(DISTINCT dst_ip) per (src_ip, 5-minute window)"
+    model_transform: log1p
+    rationale: "Fan-out across hosts; horizontal scans and sweeps touch many destinations."
+    attack_hypotheses:
+      - {technique: T1046, name: Network Service Discovery}
+      - {technique: T1018, name: Remote System Discovery}
+
+  - name: uniq_dst_port
+    level: host_window
+    status: implemented
+    inputs: [src_ip, flow_start, dst_port]
+    transform: "count(DISTINCT dst_port) per (src_ip, 5-minute window); port used as a label, not a magnitude"
+    model_transform: log1p
+    rationale: "Fan-out across services; vertical port scans touch many ports."
+    attack_hypotheses:
+      - {technique: T1046, name: Network Service Discovery}
+
+  - name: syn_only_ratio
+    level: host_window
+    status: implemented
+    inputs: [src_ip, flow_start, tcp_syn, tcp_ack]
+    transform: "avg(tcp_syn AND NOT tcp_ack) per (src_ip, 5-minute window), over all flows incl. UDP/ICMP"
+    rationale: "Share of connection attempts without a handshake reply; SYN scans raise it."
+    attack_hypotheses:
+      - {technique: T1046, name: Network Service Discovery}
+
+  - name: rst_ratio
+    level: host_window
+    status: implemented
+    inputs: [src_ip, flow_start, tcp_rst]
+    transform: "avg(tcp_rst) per (src_ip, 5-minute window)"
+    rationale: "Share of reset flows; refused connections during scanning raise it."
+    attack_hypotheses:
+      - {technique: T1046, name: Network Service Discovery}
+
+  - name: internal_ratio
+    level: host_window
+    status: implemented
+    inputs: [src_ip, flow_start, dst_is_private]
+    transform: "avg(dst_is_private) per (src_ip, 5-minute window)"
+    rationale: "Share of traffic to internal addresses; a shift towards internal peers can indicate lateral movement."
+    attack_hypotheses:
+      - {technique: T1021, name: Remote Services}
+
+  - name: max_flow_bytes
+    level: host_window
+    status: implemented
+    inputs: [src_ip, flow_start, bytes]
+    transform: "max(bytes) per (src_ip, 5-minute window)"
+    model_transform: log1p
+    rationale: "Largest single transfer; one bulk flow can hide in a normal window total."
+    attack_hypotheses:
+      - {technique: T1048, name: Exfiltration Over Alternative Protocol}
+
+  # --- candidates from existing lake columns (not implemented, not scheduled) -----------------------------
+  - name: bytes_per_packet
+    level: flow
+    status: candidate
+    inputs: [bytes, packets]
+    transform: "bytes / nullif(packets, 0)"
+    rationale: "Payload size profile; tunnels and bulk transfers differ from interactive traffic."
+    attack_hypotheses: []
+
+  - name: flow_duration
+    level: flow
+    status: candidate
+    inputs: [duration_s]
+    transform: "duration_s; heavy-tailed, log1p expected"
+    rationale: "Long-lived sessions versus short bursts; depends on the exporter's active/idle timeouts."
+    attack_hypotheses: []
+
+  - name: icmp_echo_ratio
+    level: host_window
+    status: candidate
+    inputs: [src_ip, flow_start, protocol, icmp_type]
+    transform: "avg(protocol = 1 AND icmp_type = 8) per (src_ip, window)"
+    rationale: "Share of echo requests; ping sweeps raise it."
+    attack_hypotheses:
+      - {technique: T1018, name: Remote System Discovery}
+
+  - name: dns_flow_ratio
+    level: host_window
+    status: candidate
+    inputs: [src_ip, flow_start, protocol, dst_port]
+    transform: "avg(protocol = 17 AND dst_port = 53) per (src_ip, window)"
+    rationale: "Share of DNS flows; unusually high DNS activity can indicate tunnelling."
+    attack_hypotheses:
+      - {technique: T1071.004, name: "Application Layer Protocol: DNS"}
+
+  - name: active_timeout_ratio
+    level: host_window
+    status: candidate
+    inputs: [src_ip, flow_start, flow_end_reason]
+    transform: "avg(flow_end_reason = 'active_timeout') per (src_ip, window)"
+    rationale: "Share of flows cut by the exporter's active timeout, i.e. long-lived connections. In mock data the
+      field is independent of TCP flags, so its meaning needs checking before use."
+    attack_hypotheses:
+      - {technique: T1071, name: Application Layer Protocol}
+
+  - name: mean_packet_length
+    level: host_window
+    status: candidate
+    inputs: [src_ip, flow_start, packet_length]
+    transform: "avg(packet_length) per (src_ip, window)"
+    rationale: "Recorded so it is not re-proposed: packet_length has unknown semantics (contract: low, exclude);
+      bytes_per_packet covers the idea."
+    attack_hypotheses: []
+
+  # --- candidates for later V2 tasks (not implemented) -----------------------------------------------------
+  - name: bytes_out_robust_z
+    level: host_window
+    status: candidate
+    task: V2-2
+    temporal_scope: prior_history
+    inputs: [src_ip, flow_start, bytes]
+    transform: "(bytes_out - median) / MAD of the same host's bytes_out over strictly earlier windows;
+      peer-group fallback when history is short"
+    rationale: "Host-relative volume: normal for a server can be anomalous for a workstation."
+    attack_hypotheses:
+      - {technique: T1048, name: Exfiltration Over Alternative Protocol}
+
+  - name: new_dst_ip_rate
+    level: host_window
+    status: candidate
+    task: V2-3
+    temporal_scope: prior_history
+    inputs: [src_ip, flow_start, dst_ip]
+    transform: "share of the window's distinct dst_ip never contacted by src_ip before the window start"
+    rationale: "Contact with never-seen peers; lateral movement and discovery reach new hosts."
+    attack_hypotheses:
+      - {technique: T1021, name: Remote Services}
+      - {technique: T1018, name: Remote System Discovery}
+
+  - name: new_dst_port_rate
+    level: host_window
+    status: candidate
+    task: V2-3
+    temporal_scope: prior_history
+    inputs: [src_ip, flow_start, dst_port]
+    transform: "share of the window's distinct dst_port never used by src_ip before the window start"
+    rationale: "Use of never-seen services."
+    attack_hypotheses:
+      - {technique: T1046, name: Network Service Discovery}
+
+  - name: interarrival_cv
+    level: host_window
+    status: candidate
+    task: V2-4
+    inputs: [src_ip, dst_ip, flow_start]
+    transform: "coefficient of variation of gaps between flow_start per (src_ip, dst_ip) over a window of at
+      least 1 hour; minimum over the host's peers"
+    rationale: "Regular, periodic connections (low CV) are typical of beaconing; 5-minute windows cannot show it."
+    attack_hypotheses:
+      - {technique: T1071, name: Application Layer Protocol}
+      - {technique: T1029, name: Scheduled Transfer}
