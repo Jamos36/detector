@@ -29,8 +29,6 @@ V0 — Prototype: **complete**. Next: V1 — Ingestion and Data Quality.
 - Beaconing recall is low (1/3 at K=100): 5-minute windows cannot show periodicity (V2 timing features).
 - Synthetic recall numbers are optimistic: attacks are loud and designed by us.
 - Row-level rejects not implemented: one unparseable row quarantines the whole file.
-- Repo policy: `data/` (mock + synthetic + generated artifacts, ~99 MB) was committed and pushed in 1449dc1;
-  `data/` is no longer git-ignored. See ADR-009 / TODO.
 
 ## Important decisions
 See `DECISIONS.md` (ADR-001 … ADR-009).

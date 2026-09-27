@@ -39,8 +39,8 @@ Reason: unlabeled data; operational meaning of score levels is unknown.
 Decision: no CNN/TCN until V4 shows Isolation Forest misses temporal patterns; if built, train independently of IF.
 Reason: priority is data correctness and measurable detection quality over model complexity.
 
-## ADR-009: Real network data is never committed — PENDING OWNER CONFIRMATION
-Proposal: git-ignore `data/` (raw, lake, features, models, outputs); commit only code, docs and small synthetic
-test fixtures. Mock/synthetic data can be regenerated (`generate --seed`).
-Status: commit 1449dc1 (pushed) includes `data/` (~99 MB, mock + synthetic + generated artifacts) and removed
-the ignore rule. Awaiting owner decision.
+## ADR-009: `data/` stays tracked; the project uses mock and synthetic data only
+Decision (owner, 2026-09-27): `data/` remains committed and is not git-ignored; no history scrub.
+Reason: the project will never process real network traffic, so the repo holds only mock and synthetic data
+(commit 1449dc1, ~99 MB including generated artifacts).
+Revisit when: real traffic is ever introduced — then git-ignore `data/` before it lands in `data/raw`.

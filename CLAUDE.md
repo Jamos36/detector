@@ -34,7 +34,7 @@ Ask before: pushing, force-pushing, deleting branches, opening/merging PRs, post
 modifying shared GitHub resources, destructive git operations (reset --hard, history rewrites).
 Never use `--no-verify`, force push, or resets to bypass a problem.
 Commit format: `feat|fix|refactor|docs|test|chore|perf: description`. One conceptual change per commit.
-Never commit real network data (see DECISIONS.md ADR-009).
+The project uses mock/synthetic data only and `data/` is tracked by design (DECISIONS.md ADR-009).
 
 ## End of a task
 Tests pass → review `git diff` → commit → update `PROJECT_STATUS.md` (and CHANGELOG/DECISIONS/TODO if affected).

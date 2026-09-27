@@ -3,7 +3,6 @@
 Backlog by roadmap version. Complete and validate each version before starting the next.
 
 ## Now
-- [ ] Owner decision: ADR-009 data policy (untrack `data/`, restore ignore rule).
 - [ ] Obtain exporter/collector documentation → set `validated` fields in the contract.
 
 ## V1 — Ingestion and data quality
