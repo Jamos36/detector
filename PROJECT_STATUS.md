@@ -5,7 +5,7 @@ _Last updated: 2026-09-27_
 ## Current milestone
 V0 — Prototype: **complete**. V1 — Ingestion and Data Quality: **implementation complete** (V1-1 … V1-5
 implemented and tested on mock/synthetic data). **Real-exporter semantic validation: pending** — an external
-prerequisite for real-data use, not a V1 task (see below). V2 — Feature research: **in progress** (V2-1 done).
+prerequisite for real-data use, not a V1 task (see below). V2 — Feature research: **in progress** (V2-1, V2-2 done).
 
 ## Real-data onboarding — external prerequisite (pending)
 - Exporter/collector documentation is needed to validate field meanings before any real-data use. It cannot be
@@ -35,6 +35,20 @@ prerequisite for real-data use, not a V1 task (see below). V2 — Feature resear
 - Real-data prerequisites: collector documentation to validate contract fields; re-deriving thresholds.
 
 ## Completed (V2)
+- V2-2 host baselines (ADR-018): `src/netanomaly/baselines.py`, `netanomaly baselines` →
+  `features/host_baseline/flow_date=…/part-0.parquet`; settings `baseline:` in config.yaml. `bytes_out_robust_z` =
+  (ln(1 + bytes_out) − median) / (1.4826 · MAD) over the 7 whole UTC days before the window's day (never the same
+  day); fallback host → `src_subnet` peer → global → none, recorded as `baseline_quality` with support counts
+  (`baseline_windows/days/hosts`, `host_windows/days`). Inputs checked against the registry first (all usable:
+  `src_ip`, `flow_start`, `bytes`, `src_subnet`, high/entity; nothing from `tcp_flags` or `packet_length`).
+  Not in `run`, not a model input; V0 model and features unchanged (byte-identical in test).
+  Synthetic run (`data/synth`, 6 days, 300 hosts): 222,760 rows, `bytes_out` equal to V0 host_window on every row;
+  days 1–2 `none` (< 2 earlier days), days 3–6 `host` on every row (persistent hosts, so the fallback never
+  triggers there); z p50 ≈ 0, p99 ≈ 1.8. The 3 exfil_burst injections rank #1 by z on their day (max z 4.9–5.1);
+  scans, brute force and beaconing are not volume anomalies (max z −0.8…1.8), as expected for a bytes feature.
+  Mock lake (scratch copy, not committed): no host continuity, so no `host` rows; days 3–6 fall back to `peer`
+  (27 → 2,479 rows/day) or `global`. Leakage tests were mutation-checked: letting day D into its own history, or
+  future rows into the peer history only, fails them.
 - V2-1 feature registry (ADR-017): `src/netanomaly/contracts/features_v1.yaml` (registry_version 1, bound to
   `netflow_v1` schema version 1) + `src/netanomaly/feature_registry.py`; generated `FEATURES.md`
   (`netanomaly feature-doc`, drift-tested). 19 features: the 9 implemented V0 host-window features and 10
@@ -103,7 +117,7 @@ prerequisite for real-data use, not a V1 task (see below). V2 — Feature resear
 - Code review: 2 CRITICAL + 2 HIGH findings fixed with regression tests.
 
 ## Tests
-130 passing, 0 failing (22 new for V2-1: 21 in `tests/test_feature_registry.py`, 1 lake check in
+145 passing, 0 failing (15 new for V2-2: 14 in `tests/test_baselines.py`, 1 in `tests/test_synth_pipeline.py`; 22 for V2-1: 21 in `tests/test_feature_registry.py`, 1 lake check in
 `tests/test_synth_pipeline.py`; 46 in `tests/test_timestamps.py`; 3 are tiny-scale smoke tests of `scripts/memtest.py`; the 20M-row run is manual). ruff: 3 pre-existing ISC004 findings in `schema.py` (rule new in
 ruff 0.16.9; present on HEAD before V1-1); all other files clean.
 
@@ -147,14 +161,21 @@ ruff 0.16.9; present on HEAD before V1-1); all other files clean.
   tests); the V0 model trains on two not-usable features (`syn_only_ratio`, `rst_ratio`) until V3. Usability does
   not require `validated` (0/42), so every usable feature is provisional. ATT&CK entries are unreviewed hypotheses.
   Candidate transforms are prose, not executable, and are not yet checked against data (feature cards, V2-5).
+- V2-2 limits: baselines are whole-day, so they lag up to 24 h and the first 2 days of any lake are `none`;
+  a within-day level shift is not absorbed until the next day. No hour-of-day or weekday seasonality: diurnal hosts
+  score night windows against all-day history (active windows only). Peer group = `src_subnet`, whose meaning is
+  unvalidated and may not group similar hosts in real networks; the synthetic subnets partly follow roles, so the
+  peer level looks better here than it may be. Fallback is exercised by tests and mock data, not by synthetic
+  attacks. Thresholds (7 days, 30 windows, 2 days, 5 hosts) are untuned. Rebuilding after late flows for past
+  days changes later baselines (backfill, not leakage); there is no as-of snapshot. Only `bytes_out` is baselined.
 - Existing `data/lake` and `data/synth/lake` were built by V0 code; re-ingest is not needed (output is identical)
   and would only add `rejected_rows` to the ledger.
 
 ## Important decisions
-See `DECISIONS.md` (ADR-001 … ADR-017).
+See `DECISIONS.md` (ADR-001 … ADR-018).
 
 ## Next task
-V2-2: host baselines from strictly prior data (median/MAD) with a leakage test, peer-group fallback and
-`baseline_quality`, starting from the registry's `bytes_out_robust_z` entry (see `TODO.md`). Mock/synthetic data
+V2-3: new-destination / new-port rates from a persistent seen-set built from strictly prior data (registry
+`new_dst_ip_rate`, `new_dst_port_rate`; see `TODO.md`), with a leakage test like V2-2's. Mock/synthetic data
 only; unvalidated field meanings stay provisional. Real-exporter semantic validation remains an external
 prerequisite.

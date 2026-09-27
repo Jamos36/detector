@@ -136,3 +136,21 @@ low-confidence fields reach the model unchecked. Computing eligibility from one 
 and contract from disagreeing.
 Revisit when: collector documentation validates fields (then consider requiring `validated` for usability), or a
 feature needs a source rule beyond confidence/model_use.
+
+## ADR-018: Host baselines from whole earlier days, median/MAD, subnet then global fallback
+Decision (V2-2): `bytes_out_robust_z` compares `ln(1 + bytes_out)` of a host-window on UTC day D with the median and
+MAD of the `lookback_days` (7) whole days before D. The same day is never history. Fallback order host → peer
+(`src_subnet`) → global → none; a level needs ≥ 30 windows on ≥ 2 days and MAD > 0 (peer/global: ≥ 5 hosts).
+The quality measure is the level used (`baseline_quality`) with its support counts, not a fitted number.
+Reason: whole-day history makes the no-leakage rule easy to state and test (a row cannot see its own day), keeps
+memory bounded (one day per query) and stops an attack early in a day from lowering later scores that day.
+Median/MAD resist the outliers the baseline is meant to expose; the log makes deviations multiplicative.
+`src_subnet` is a contract field (entity, high), so peers are observable in real data; synthetic roles are not.
+An ordered level with counts is transparent; a single numeric score would need weights we cannot justify.
+Rejected: rolling per-window frames (fresher, but quantile window frames over large peer/global partitions are
+memory-heavy and the leakage rule is harder to audit); zero-filled inactive windows (changes the question to
+"how busy", already covered by `flows`); MAD floor constants (magic numbers; MAD = 0 falls back instead).
+Consequences: baselines lag up to 24 h; the first `min_days` days of any lake have `none`; late-arriving flows
+for past days change later baselines when rebuilt (backfill, not leakage). Not a V0 model input.
+Revisit when: V2-5 feature cards or V4 evaluation show the daily lag, the subnet peer group or the thresholds
+hurt detection, or real data shows subnets that do not group similar hosts.

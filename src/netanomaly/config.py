@@ -40,6 +40,15 @@ class DQSettings(BaseModel):
     volume_ratio_high: float = Field(default=2.0, gt=0)
 
 
+class BaselineSettings(BaseModel):
+    # Host baselines (V2-2, baselines.py): rows on day D use only the `lookback_days` whole UTC days before D.
+    lookback_days: int = Field(default=7, ge=1)
+    # A level (host, peer, global) qualifies with this much history and MAD > 0; otherwise fall back.
+    min_windows: int = Field(default=30, ge=2)
+    min_days: int = Field(default=2, ge=1)
+    min_peer_hosts: int = Field(default=5, ge=2)  # peer and global levels only
+
+
 class ModelSettings(BaseModel):
     train_sample_rows: int = Field(default=200_000, ge=1_000)
     n_estimators: int = Field(default=200, ge=10)
@@ -53,6 +62,7 @@ class Settings(BaseModel):
     duckdb: DuckDBSettings = DuckDBSettings()
     ingest: IngestSettings = IngestSettings()
     dq: DQSettings = DQSettings()
+    baseline: BaselineSettings = BaselineSettings()
     model: ModelSettings = ModelSettings()
     batch_rows: int = Field(default=50_000, ge=1_000)
     window_minutes: int = Field(default=5, ge=1)

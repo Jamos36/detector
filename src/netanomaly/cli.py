@@ -16,7 +16,7 @@ from pathlib import Path
 
 import joblib
 
-from netanomaly import alerts, feature_registry, features, iforest, quality
+from netanomaly import alerts, baselines, feature_registry, features, iforest, quality
 from netanomaly.config import Paths, Settings, load_settings
 from netanomaly.db import connect
 from netanomaly.ingest import ingest_directory
@@ -99,6 +99,15 @@ def cmd_features(args: argparse.Namespace, s: Settings) -> None:
     log.info("host-window feature rows: %d", rows)
 
 
+def cmd_baselines(args: argparse.Namespace, s: Settings) -> None:
+    registry = feature_registry.load_registry()
+    baselines.require_usable_inputs(registry, load_contract(registry.contract))
+    out = s.paths.features / "host_baseline"
+    rows = baselines.build_host_baseline(connect(s.duckdb), s.paths.lake, out, s.duckdb.temp_directory,
+                                         s.window_minutes, s.baseline)
+    log.info("host-baseline rows: %d (lookback %d days) -> %s", rows, s.baseline.lookback_days, out)
+
+
 def cmd_train(args: argparse.Namespace, s: Settings) -> None:
     _, manifest, out = iforest.train(connect(s.duckdb), _host_window_dir(s), list(features.HOST_WINDOW_FEATURES),
                                      s.model, s.paths.models)
@@ -158,8 +167,8 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--start", default="2026-09-01")
     g.add_argument("--format", choices=("parquet", "csv"), default="parquet")
     g.set_defaults(func=cmd_generate)
-    for name, func in (("ingest", cmd_ingest), ("features", cmd_features), ("train", cmd_train),
-                       ("score", cmd_score), ("alerts", cmd_alerts), ("run", cmd_run),
+    for name, func in (("ingest", cmd_ingest), ("features", cmd_features), ("baselines", cmd_baselines),
+                       ("train", cmd_train), ("score", cmd_score), ("alerts", cmd_alerts), ("run", cmd_run),
                        ("schema-doc", cmd_schema_doc), ("feature-doc", cmd_feature_doc)):
         sub.add_parser(name).set_defaults(func=func)
     q = sub.add_parser("dq", help="data-quality report for one ingest batch -> outputs/dq/dq_<batch>.{json,md}")

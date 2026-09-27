@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from netanomaly import features, iforest
+from netanomaly import baselines, features, iforest
 from netanomaly.feature_registry import (
     DerivedColumn,
     Level,
@@ -45,9 +45,11 @@ def test_features_md_is_generated_from_registry(registry, contract):
     assert features_md.read_text(encoding="utf-8") == to_markdown(registry, contract), "run: uv run netanomaly feature-doc"
 
 
-def test_implemented_features_match_the_v0_pipeline(registry):
+def test_implemented_features_match_the_pipeline(registry):
     implemented = [f for f in registry.features if f.status is Status.IMPLEMENTED]
-    assert tuple(f.name for f in implemented) == features.HOST_WINDOW_FEATURES
+    model_inputs = [f for f in implemented if f.name not in baselines.BASELINE_FEATURES]
+    assert tuple(f.name for f in model_inputs) == features.HOST_WINDOW_FEATURES
+    assert {f.name for f in implemented} - {f.name for f in model_inputs} == set(baselines.BASELINE_FEATURES)
     assert {f.name for f in implemented if f.model_transform is ModelTransform.LOG1P} == iforest.LOG1P_FEATURES
 
 
@@ -135,5 +137,5 @@ def test_duplicate_feature_names_are_rejected():
 def test_baseline_and_novelty_candidates_are_marked_prior_history(registry):
     # V2-2/V2-3 use past windows, so the no-leakage rule applies; the scope must say so.
     for f in registry.features:
-        if f.task in ("V2-2", "V2-3"):
+        if f.task == "V2-3" or f.name in baselines.BASELINE_FEATURES:
             assert f.temporal_scope is TemporalScope.PRIOR_HISTORY, f.name

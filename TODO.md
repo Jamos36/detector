@@ -19,7 +19,8 @@ Cannot be done in this mock/synthetic repo (ADR-012); must be completed before a
 ## V2 — Feature research
 - [x] V2-1 Feature registry (required columns, level, transform, rationale, ATT&CK hypothesis) — ADR-017,
       `contracts/features_v1.yaml`, generated `FEATURES.md`.
-- [ ] Host baselines from strictly prior data (median/MAD) + leakage test; peer-group fallback + baseline_quality.
+- [x] V2-2 Host baselines from strictly prior data (median/MAD) + leakage test; peer-group fallback + baseline_quality
+      — ADR-018, `baselines.py`, `netanomaly baselines`.
 - [ ] New-destination / new-port rates (persistent seen-set, prior data only).
 - [ ] Timing regularity over ≥1 h windows (beaconing).
 - [ ] Feature cards: distribution, missingness, cardinality, redundancy, PSI stability, single-feature AUROC on injections.

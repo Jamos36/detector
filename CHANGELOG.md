@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- feat (V2-2): host baselines `netanomaly baselines` → `features/host_baseline/` (ADR-018). `bytes_out_robust_z` =
+  robust z of `ln(1 + bytes_out)` against the median/MAD of the 7 whole UTC days before the window's day; fallback
+  host → `src_subnet` peer group → global → none, recorded in `baseline_quality` with support counts. Refuses to run
+  if the registry rates its inputs unusable. Leakage tests (incl. peer/global fallback) are mutation-checked.
+  Not part of `run`; the V0 model is unchanged. Registry entry now implemented, inputs gain `src_subnet`.
 - feat (V2-1): versioned feature registry `contracts/features_v1.yaml` (19 features: 9 implemented V0, 10 candidates)
   with inputs, level, transform, temporal scope, rationale and ATT&CK hypotheses. Eligibility is computed from the
   contract (ADR-017): 16 usable (all provisional, 0 on validated fields), 3 not usable — incl. V0 `syn_only_ratio`

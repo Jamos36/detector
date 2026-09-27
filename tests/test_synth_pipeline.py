@@ -153,3 +153,22 @@ def test_production_modules_do_not_use_flow_sequence():
     offenders = [p.name for p in src.glob("*.py") if p.name not in allowed and "flow_sequence" in p.read_text("utf-8")]
     assert offenders == []
     assert "flow_sequence" not in inspect.getsource(alerts.write_top_alerts)
+
+
+# --- host baselines (V2-2) ---------------------------------------------------
+
+def test_baselines_cover_every_host_window_without_changing_v0_features(synth_root, con):
+    hw = synth_root / "features" / "host_window"
+    before = sorted(p.read_bytes() for p in hw.rglob("*.parquet"))
+    main(["--root", str(synth_root), "baselines"])
+    assert sorted(p.read_bytes() for p in hw.rglob("*.parquet")) == before  # V0 features untouched
+    base = (synth_root / "features" / "host_baseline" / "**" / "*.parquet").as_posix()
+    rows, mismatched, by_day = con.sql(f"""
+        SELECT count(*), count(*) FILTER (WHERE h.bytes_out IS DISTINCT FROM b.bytes_out),
+               list(DISTINCT b.flow_date || ':' || b.baseline_quality ORDER BY b.flow_date || ':' || b.baseline_quality)
+        FROM read_parquet('{base}', hive_partitioning = true) b
+        FULL JOIN read_parquet('{(hw / '**' / '*.parquet').as_posix()}', hive_partitioning = true) h
+          USING (src_ip, window_start)""").fetchone()
+    assert rows > 0 and mismatched == 0
+    # two synthetic days: day 1 has no earlier data; day 2 has one earlier day < min_days (2)
+    assert by_day == ["2026-09-01:none", "2026-09-02:none"]

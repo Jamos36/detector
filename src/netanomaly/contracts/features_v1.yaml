@@ -7,7 +7,8 @@
 #
 # level:          flow        - one value per flow
 #                 host_window - one value per (src_ip, time window); window length in `transform`
-# status:         implemented - computed by the current pipeline (V0: features.HOST_WINDOW_FEATURES)
+# status:         implemented - computed by the current pipeline: V0 model inputs (features.HOST_WINDOW_FEATURES)
+#                               or host baselines, not model inputs (baselines.BASELINE_FEATURES, V2-2)
 #                 candidate   - not implemented; `task` names the roadmap task that would build it, if scheduled
 # temporal_scope: window        - uses only rows inside its own flow/window (default)
 #                 prior_history - also uses history, which must be strictly earlier than the window (no leakage)
@@ -172,18 +173,20 @@ features:
       bytes_per_packet covers the idea."
     attack_hypotheses: []
 
-  # --- candidates for later V2 tasks (not implemented) -----------------------------------------------------
+  # --- implemented (V2-2 host baselines, baselines.py; not a V0 model input) ------------------------------
   - name: bytes_out_robust_z
     level: host_window
-    status: candidate
-    task: V2-2
+    status: implemented
     temporal_scope: prior_history
-    inputs: [src_ip, flow_start, bytes]
-    transform: "(bytes_out - median) / MAD of the same host's bytes_out over strictly earlier windows;
-      peer-group fallback when history is short"
+    inputs: [src_ip, flow_start, bytes, src_subnet]
+    transform: "(ln(1 + bytes_out) - median) / (1.4826 * MAD) over the host's windows on the 7 whole UTC days
+      before the window's day (never the same day); falls back to the src_subnet peer group, then all hosts, when
+      the host's history is short or MAD = 0; baseline_quality records the level used"
     rationale: "Host-relative volume: normal for a server can be anomalous for a workstation."
     attack_hypotheses:
       - {technique: T1048, name: Exfiltration Over Alternative Protocol}
+
+  # --- candidates for later V2 tasks (not implemented) -----------------------------------------------------
 
   - name: new_dst_ip_rate
     level: host_window
