@@ -89,3 +89,21 @@ the preprocessing transform lives in code, not in the artifact; the manifest lac
 `window_minutes`, contract version, code commit and training-data lineage.
 Revisit when: designing the company-environment deployment — choose the format there (e.g. keep joblib with pinned
 versions and integrity checks, or a non-pickle format) and extend the manifest accordingly.
+
+## ADR-015: Timestamps without a UTC offset are assumed UTC, with a data-quality warning
+Decision: for the TIMESTAMPTZ contract columns (`flow_start_time`, `flow_end_time`, `time_stamp`):
+- text (CSV, or Parquet VARCHAR) must match `YYYY-MM-DD[T ]hh:mm[:ss[.f{1,9}]]` plus an optional zone `Z`, `UTC` or
+  `±hh`, `±hhmm`, `±hh:mm` (at most 14:00). With a zone it is converted to UTC. Without one it is assumed UTC,
+  explicitly via `timezone('UTC', …)`, so the result never depends on the DuckDB session zone;
+- Parquet `TIMESTAMP`/`TIMESTAMP_S/MS/NS` (no isAdjustedToUTC) is treated like offset-free text;
+  `TIMESTAMP WITH TIME ZONE` is taken as is;
+- anything else (other text, named zones or abbreviations such as `EST`, date-only, `24:00`, `infinity`,
+  offsets beyond ±14:00, impossible dates, integer or DATE columns) is invalid: a `cast_failed` row reject.
+Offset-free values of ingested rows are counted per file and column in the ledger (`timestamps_without_offset`)
+and reported as a warning in the batch DQ report and in the `ingest`/`dq` logs.
+Reason: the collector's timezone behaviour is undocumented (`time_code` is not a timezone, ADR-002). Rejecting
+offset-free values would drop whole exports that are probably UTC; silently assuming UTC would hide a possible
+shift of every flow by the local offset. DuckDB's own parser is too lenient to define validity (it accepts
+`+25:00`, `24:00:00` and `infinity`, and ignores unknown zone abbreviations).
+Revisit when: collector documentation states the export zone. If exports are local time, convert with that zone
+instead of assuming UTC; named IANA zones could then be accepted.

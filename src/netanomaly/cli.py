@@ -74,6 +74,8 @@ def cmd_ingest(args: argparse.Namespace, s: Settings) -> None:
     for e in ingest_directory(con, s.paths.raw, load_contract(), s.paths.lake, s.duckdb.temp_directory / "stage",
                               s.ingest.max_reject_fraction):
         log.info("%-40s %-18s rows=%-8d rejected=%-6d %s", e.source_file, e.status, e.rows, e.rejected_rows, e.reason)
+        if without_offset := {c: n for c, n in e.timestamps_without_offset.items() if n}:
+            log.warning("%s: timestamps without UTC offset, assumed UTC: %s", e.source_file, without_offset)
 
 
 def cmd_dq(args: argparse.Namespace, s: Settings) -> None:
@@ -87,6 +89,9 @@ def cmd_dq(args: argparse.Namespace, s: Settings) -> None:
     volume = [f"{v.flow_date}={v.status}" for v in report.volume if v.status in ("low", "high")]
     log.info("dq batch %s: %d flows, %d rejected; checks with violations: %s; volume flags: %s -> %s",
              batch, report.flows, report.rejected_rows, flagged or "none", volume or "none", md_path)
+    if report.timestamps_without_offset:
+        log.warning("dq batch %s: %d timestamp values without UTC offset were assumed UTC (see report)",
+                    batch, sum(w.values for w in report.timestamps_without_offset))
 
 
 def cmd_features(args: argparse.Namespace, s: Settings) -> None:

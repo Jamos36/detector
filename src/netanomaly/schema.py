@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from enum import StrEnum
 from functools import cache
 from importlib import resources
@@ -56,9 +57,17 @@ class Contract(BaseModel):
         """Explicit raw-column types for read_csv, so no per-file type inference."""
         return {c.raw: c.type for c in self.columns}
 
-    def rename_select(self) -> str:
-        """SQL select list that casts and renames raw columns to canonical names."""
-        return ",\n  ".join(f'CAST("{c.raw}" AS {c.type}) AS "{c.name}"' for c in self.columns)
+    def rename_select(self, exprs: Mapping[str, str] | None = None) -> str:
+        """SQL select list that casts and renames raw columns to canonical names.
+
+        `exprs` maps a raw column to its own value expression, replacing the plain CAST.
+        """
+        exprs = exprs or {}
+
+        def value(c: Column) -> str:
+            return exprs.get(c.raw) or f'CAST("{c.raw}" AS {c.type})'
+
+        return ",\n  ".join(f'{value(c)} AS "{c.name}"' for c in self.columns)
 
     def check_columns(self, found: list[str]) -> tuple[list[str], list[str]]:
         """Return (missing, unexpected) raw columns for a file's header."""

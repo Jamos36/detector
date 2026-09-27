@@ -8,6 +8,9 @@ Rules:
   fraction exceeds `max_reject_fraction` (then it is a file problem, not a row problem).
 - Types come from the schema contract (no inference): CSV is staged as text and
   cast with TRY_CAST, so one bad value rejects one row.
+- Timestamps follow `netanomaly.timestamps`: values without an offset are assumed
+  UTC and counted per column in the ledger (a data-quality warning); unparseable
+  values are rejected.
 - Every output row carries flow_id, source_file, source_row_number,
   source_file_hash and ingest_batch_id, so any anomaly traces back to its
   original record.
@@ -22,7 +25,7 @@ import json
 import logging
 import shutil
 from collections.abc import Iterable, Iterator
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -32,6 +35,7 @@ import pyarrow.parquet as pq
 
 from netanomaly.db import sql_literal as _sql_str
 from netanomaly.schema import Contract
+from netanomaly.timestamps import TIMESTAMPTZ, ParseStatus, TimestampSql, timestamp_sql
 
 log = logging.getLogger(__name__)
 
@@ -87,6 +91,8 @@ class LedgerEntry:
     ingest_batch_id: str
     recorded_at: str
     rejected_rows: int = 0  # default keeps ledger lines written before row-level rejects readable
+    # raw timestamp column -> ingested rows whose value had no offset and was assumed UTC (V1-4)
+    timestamps_without_offset: dict[str, int] = field(default_factory=dict)
 
 
 def detect_format(path: Path) -> FileFormat:
@@ -171,12 +177,26 @@ def _flow_id_sql(file_hash: str) -> str:
     return f"left(sha256({_sql_str(file_hash)} || ':' || source_row_number::VARCHAR), 32)"
 
 
-def _problem_checks(contract: Contract) -> str:
+def _timestamp_sql(con: duckdb.DuckDBPyConnection, contract: Contract, source: str) -> dict[str, TimestampSql]:
+    """Parsing expressions for each TIMESTAMPTZ contract column, chosen by its type in the source Parquet."""
+    found = {row[0]: row[1] for row in con.execute(f"DESCRIBE SELECT * FROM read_parquet({_sql_str(source)})").fetchall()}
+    columns = [c.raw for c in contract.columns if c.type == TIMESTAMPTZ]
+    return {raw: timestamp_sql(f'"{raw}"', found[raw], f"_ts{i}") for i, raw in enumerate(columns)}
+
+
+def _problem_checks(contract: Contract, timestamps: dict[str, TimestampSql]) -> str:
     """SQL list of a row's problems (NULLs filtered out): uncastable values and empty required columns."""
     checks = []
     for c in contract.columns:
         raw = f'"{c.raw}"'
-        if c.type != "VARCHAR":
+        if (ts := timestamps.get(c.raw)) is not None:
+            checks.append(
+                f"CASE WHEN {ts.status_is(ParseStatus.INVALID)} THEN "
+                f"{{'reason': '{RejectReason.CAST_FAILED}', 'column_name': {_sql_str(c.raw)}, "
+                f"'raw_value': left(CAST({raw} AS VARCHAR), {MAX_RAW_VALUE_CHARS}), "
+                f"'detail': {_sql_str(ts.detail)}}} END"
+            )
+        elif c.type != "VARCHAR":
             checks.append(
                 f"CASE WHEN {raw} IS NOT NULL AND TRY_CAST({raw} AS {c.type}) IS NULL THEN "
                 f"{{'reason': '{RejectReason.CAST_FAILED}', 'column_name': {_sql_str(c.raw)}, "
@@ -194,8 +214,21 @@ def _problem_checks(contract: Contract) -> str:
     return "list_filter([\n    " + ",\n    ".join(checks) + "\n  ], p -> p IS NOT NULL)"
 
 
-def _checked_rows_ctes(contract: Contract, source: str, structural_rejects: str | None) -> str:
+def _parsed_select(timestamps: dict[str, TimestampSql]) -> str:
+    """Two projections over `numbered`: the regex match once per value, then the parse result from it."""
+    if not timestamps:
+        return "SELECT * FROM numbered"
+    matches = ", ".join(f"{ts.match} AS {ts.match_column}" for ts in timestamps.values())
+    parsed = ", ".join(f"{ts.parsed} AS {ts.column}" for ts in timestamps.values())
+    return f"SELECT *, {parsed} FROM (SELECT *, {matches} FROM numbered)"
+
+
+def _checked_rows_ctes(
+    contract: Contract, source: str, structural_rejects: str | None, timestamps: dict[str, TimestampSql]
+) -> str:
     """CTEs ending in `checked`: every source row with its original 1-based row number and its `_problems`.
+
+    `parsed` adds each timestamp column's parse result (see `netanomaly.timestamps`).
 
     CSV records DuckDB could not split into columns never reach the staged file, so staged
     position `_k` is shifted past the rejected records before it: ASOF join on `kept_before`
@@ -218,17 +251,20 @@ offsets AS (SELECT source_row_number - skipped AS kept_before, max(skipped) AS s
     return f"""
 WITH src AS ({src}),{offsets}
 numbered AS ({numbered}),
-checked AS (SELECT *, {_problem_checks(contract)} AS _problems FROM numbered)"""
+parsed AS ({_parsed_select(timestamps)}),
+checked AS (SELECT *, {_problem_checks(contract, timestamps)} AS _problems FROM parsed)"""
 
 
-def _normalize_select(contract: Contract, ctes: str, source_name: str, file_hash: str, batch_id: str) -> str:
+def _normalize_select(
+    contract: Contract, ctes: str, timestamps: dict[str, TimestampSql], source_name: str, file_hash: str, batch_id: str
+) -> str:
     flag_bits = ",\n  ".join(
         f"coalesce(list_contains(string_split(tcp_flags, '-'), '{f}'), false) AS tcp_{f.lower()}" for f in TCP_FLAGS
     )
     return f"""{ctes},
 typed AS (
   SELECT
-  {contract.rename_select()},
+  {contract.rename_select({raw: ts.value for raw, ts in timestamps.items()})},
   source_row_number
   FROM checked
   WHERE len(_problems) = 0
@@ -307,6 +343,20 @@ GROUP BY line, error_type""")
     return staged, rejects
 
 
+def _timestamps_without_offset(
+    con: duckdb.DuckDBPyConnection, ctes: str, timestamps: dict[str, TimestampSql], rejects_file: Path
+) -> dict[str, int]:
+    """Per timestamp column: kept (not rejected) rows whose value had no offset and was assumed UTC."""
+    if not timestamps:
+        return {}
+    counts = ", ".join(f"count_if({ts.status_is(ParseStatus.NO_OFFSET)})" for ts in timestamps.values())
+    row = con.execute(
+        f"{ctes}\nSELECT {counts} FROM parsed "
+        f"ANTI JOIN read_parquet({_sql_str(rejects_file)}) USING (source_row_number)"
+    ).fetchone()
+    return dict(zip(timestamps, row, strict=True))
+
+
 def _parquet_rows(files: Iterator[Path]) -> int:
     return sum(pq.ParquetFile(f).metadata.num_rows for f in files)
 
@@ -363,11 +413,14 @@ def ingest_file(
     file_hash = file_hash or file_sha256(path)
     fmt = detect_format(path)
 
-    def record(status: Status, rows: int = 0, reason: str = "", rejected_rows: int = 0) -> LedgerEntry:
+    def record(
+        status: Status, rows: int = 0, reason: str = "", rejected_rows: int = 0,
+        without_offset: dict[str, int] | None = None,
+    ) -> LedgerEntry:
         entry = LedgerEntry(
             source_file=path.name, file_hash=file_hash, fmt=fmt.value, status=status.value, rows=rows,
             reason=reason, ingest_batch_id=batch_id, recorded_at=datetime.now(UTC).isoformat(),
-            rejected_rows=rejected_rows,
+            rejected_rows=rejected_rows, timestamps_without_offset=without_offset or {},
         )
         append_ledger(lake, entry)
         return entry
@@ -388,13 +441,15 @@ def ingest_file(
     try:
         if fmt is FileFormat.CSV:
             staged, structural = _stage_csv(con, path, stage_dir, file_hash)
-        ctes = _checked_rows_ctes(contract, (staged or path).as_posix(), structural)
+        source = (staged or path).as_posix()
+        timestamps = _timestamp_sql(con, contract, source)
+        ctes = _checked_rows_ctes(contract, source, structural, timestamps)
         new_flows, rejects_file = new_dir / FLOWS_DIR, new_dir / "rejects.parquet"
         con.execute(
             f"COPY ({_rejects_select(ctes, structural, path.name, file_hash, batch_id)}) "
             f"TO {_sql_str(rejects_file)} (FORMAT parquet, COMPRESSION zstd)"
         )
-        select = _normalize_select(contract, ctes, path.name, file_hash, batch_id)
+        select = _normalize_select(contract, ctes, timestamps, path.name, file_hash, batch_id)
         con.execute(
             f"COPY ({select}) TO {_sql_str(new_flows)} (FORMAT parquet, COMPRESSION zstd, "
             f"PARTITION_BY (flow_date), FILENAME_PATTERN 'src_{file_hash[:HASH_PREFIX]}_{{i}}')"
@@ -407,6 +462,7 @@ def ingest_file(
             return record(Status.QUARANTINED, rejected_rows=rejected, reason=(
                 f"{rejected} of {total} rows rejected ({rejected / total:.1%}) > "
                 f"max_reject_fraction {max_reject_fraction:.1%}: {by_reason}")[:500])
+        without_offset = _timestamps_without_offset(con, ctes, timestamps, rejects_file)
         # old output is removed only after the new write succeeded
         _swap_in(new_flows, lake, file_hash, rejects_file if rejected else None)
     except duckdb.Error as exc:
@@ -417,7 +473,7 @@ def ingest_file(
             staged.unlink(missing_ok=True)
         if structural is not None:
             con.execute(f"DROP TABLE IF EXISTS {structural}")
-    return record(Status.INGESTED, rows=rows, rejected_rows=rejected)
+    return record(Status.INGESTED, rows=rows, rejected_rows=rejected, without_offset=without_offset)
 
 
 def ingest_directory(

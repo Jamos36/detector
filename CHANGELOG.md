@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- feat (V1-4): explicit timestamp policy (ADR-015). Offset-free timestamps (CSV text or naive Parquet `TIMESTAMP`)
+  are assumed UTC independent of the DuckDB session zone and counted in the ledger (`timestamps_without_offset`);
+  the DQ report and `ingest`/`dq` logs warn about them. Timestamp text must match a strict ISO-8601 subset;
+  values DuckDB used to accept (`+25:00`, `24:00:00`, `infinity`, zone abbreviations, date-only) and non-timestamp
+  Parquet types are now `cast_failed` rejects.
 - test (V1-3): `scripts/memtest.py` memory test. 19.86M synthetic rows ingested under memory_limit 2GB in all three
   layouts (31 daily Parquet, one Parquet, one 7.7 GB CSV); peak working set 0.81 / 2.19 / 2.42 GB. Results in
   PROJECT_STATUS.md.

@@ -48,13 +48,19 @@ Each stage reads the previous stage's files, so stages re-run independently. `--
 - `flow_id = left(sha256(file_hash || ':' || row), 32)` — deterministic across re-runs.
 - Ledger (JSONL, latest entry per file hash wins): `in_progress` → `ingested | quarantined`.
   Output is written to `lake/_staging/<hash>` and swapped in only after success; a crash leaves the file retryable.
-- Timestamps are TIMESTAMPTZ in UTC, microsecond precision (source nanoseconds truncated).
+- Timestamps are TIMESTAMPTZ in UTC, microsecond precision (source nanoseconds truncated). Parsing follows
+  `timestamps.py` (ADR-015): a value with `Z`/`UTC`/`±hh[:mm]` is converted; a valid value without an offset (text
+  or Parquet `TIMESTAMP`) is assumed UTC via `timezone('UTC', …)`, independent of the session zone; anything
+  else is a `cast_failed` reject. Offset-free values of kept rows are counted per column into the ledger field
+  `timestamps_without_offset` (one extra scan of the source's timestamp columns, anti-joined with the rejects).
 
 ## Data-quality report (`netanomaly dq [--batch ID]`, also run after ingest in `run`)
 - Scope: files whose latest ledger entry has that `ingest_batch_id` (default: newest batch).
 - One DuckDB pass over the batch's lake files gives the row count, every plausibility check
   (applicable rows, violations, first violating `source_file:row`) and per-column null counts.
 - Rejects by (reason, column) from `lake/rejects/`; quarantined files appear in the files table with their ledger reason.
+- Timestamps without offset: per file and column from the ledger (`timestamps_without_offset`), with the rate of
+  the file's ingested rows; any count > 0 adds a warning line to the top of the report and to the `dq` log.
 - Column drift: raw files located by name and confirmed by hash; header vs contract (missing/unexpected);
   Parquet physical types vs contract as `width` (same family, cast on ingest) or `family` (different).
 - Daily volume: flows per UTC day across the whole lake vs the median of the previous `dq.trailing_days`

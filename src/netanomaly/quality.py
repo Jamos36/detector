@@ -1,8 +1,9 @@
 """Per-batch data-quality report (V1-2).
 
 For one ingest batch: plausibility checks on its flows, null rates, rejects by
-reason, column drift of its raw files against the schema contract, and daily
-volume against the median of strictly earlier days. DuckDB does every scan;
+reason, timestamps without a UTC offset (assumed UTC; a warning), column drift of
+its raw files against the schema contract, and daily volume against the median
+of strictly earlier days. DuckDB does every scan;
 Python only receives aggregates (one row per check, column, reason or day).
 
 Counts are observations, not verdicts: most checks rest on field meanings that
@@ -143,6 +144,16 @@ class FileSummary:
 
 
 @dataclass(frozen=True)
+class TimestampWarning:
+    """Timestamps without a UTC offset in one ingested file: parsed as UTC, which may be wrong."""
+
+    source_file: str
+    column: str  # raw column name
+    values: int  # ingested rows whose value had no offset
+    rate: float | None  # of the file's ingested rows
+
+
+@dataclass(frozen=True)
 class QualityReport:
     batch_id: str
     generated_at: str
@@ -152,6 +163,7 @@ class QualityReport:
     checks: list[CheckResult]
     null_rates: list[NullRate]
     rejects: list[RejectCount]
+    timestamps_without_offset: list[TimestampWarning]
     volume: list[DayVolume]
     drift: list[FileDrift]
 
@@ -226,6 +238,15 @@ WHERE ingest_batch_id = {sql_literal(batch_id)}
 GROUP BY ALL
 ORDER BY n DESC, reason, column_name NULLS FIRST""").fetchall()
     return [RejectCount(reason, column, n) for reason, column, n in rows]
+
+
+def timestamp_warnings(entries: list[LedgerEntry]) -> list[TimestampWarning]:
+    """Columns of ingested files with timestamps that had no offset (counted at ingest, see ingest.py)."""
+    return [
+        TimestampWarning(e.source_file, column, n, _rate(n, e.rows))
+        for e in entries if e.status == Status.INGESTED
+        for column, n in sorted(e.timestamps_without_offset.items()) if n
+    ]
 
 
 # --- daily volume ---------------------------------------------------------------
@@ -350,6 +371,7 @@ def build_report(
         checks=checks,
         null_rates=nulls,
         rejects=_reject_counts(con, lake, ingested, batch_id),
+        timestamps_without_offset=timestamp_warnings(ingested),
         volume=daily_volume(con, lake, sorted({_partition_date(f) for f in files}), s),
         drift=column_drift(con, contract, raw_dir, entries),
     )
@@ -407,6 +429,17 @@ def _md_rejects(r: QualityReport) -> list[str]:
             *body]
 
 
+def _md_timestamps(r: QualityReport) -> list[str]:
+    head = ["## Timestamps without offset", "",
+            ("Valid timestamps without a UTC offset are assumed to be UTC (ADR-015). If the exporter wrote local "
+             "time, these flows are shifted by the zone's offset. Unparseable timestamps are rejects (cast_failed)."),
+            ""]
+    if not r.timestamps_without_offset:
+        return [*head, "None: every ingested timestamp carried an offset.", ""]
+    rows = [[w.source_file, w.column, w.values, _pct(w.rate)] for w in r.timestamps_without_offset]
+    return [*head, *_table(["file", "column", "values", "rate of file rows"], rows)]
+
+
 def _md_volume(r: QualityReport) -> list[str]:
     rows = [[v.flow_date, v.flows, None if v.trailing_median is None else f"{v.trailing_median:.1f}", v.history_days,
              None if v.ratio is None else f"{v.ratio:.2f}", v.status] for v in r.volume]
@@ -438,5 +471,9 @@ def render_markdown(r: QualityReport) -> str:
          "violations are legitimate traffic."),
         "",
     ]
-    sections = _md_files(r) + _md_checks(r) + _md_nulls(r) + _md_rejects(r) + _md_volume(r) + _md_drift(r)
+    if n := sum(w.values for w in r.timestamps_without_offset):
+        intro += [(f"**Warning:** {n} timestamp values had no UTC offset and were assumed to be UTC "
+                   "(see Timestamps without offset)."), ""]
+    sections = (_md_files(r) + _md_checks(r) + _md_nulls(r) + _md_rejects(r) + _md_timestamps(r)
+                + _md_volume(r) + _md_drift(r))
     return "\n".join(intro + sections)
