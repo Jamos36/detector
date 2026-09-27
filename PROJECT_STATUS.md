@@ -5,7 +5,7 @@ _Last updated: 2026-09-27_
 ## Current milestone
 V0 — Prototype: **complete**. V1 — Ingestion and Data Quality: **implementation complete** (V1-1 … V1-5
 implemented and tested on mock/synthetic data). **Real-exporter semantic validation: pending** — an external
-prerequisite for real-data use, not a V1 task (see below). V2 — Feature research: **in progress** (V2-1, V2-2 done).
+prerequisite for real-data use, not a V1 task (see below). V2 — Feature research: **in progress** (V2-1, V2-2, V2-3 done).
 
 ## Real-data onboarding — external prerequisite (pending)
 - Exporter/collector documentation is needed to validate field meanings before any real-data use. It cannot be
@@ -35,6 +35,26 @@ prerequisite for real-data use, not a V1 task (see below). V2 — Feature resear
 - Real-data prerequisites: collector documentation to validate contract fields; re-deriving thresholds.
 
 ## Completed (V2)
+- V2-3 host novelty (ADR-019): `src/netanomaly/novelty.py`, `netanomaly novelty [--rebuild]` →
+  `features/host_novelty/flow_date=…/part-0.parquet` + seen set `features/novelty_state/`. A `dst_ip` (`dst_port`)
+  is new in a host-window when the host has no flow to it with `flow_start` before the window start (whole lake, no
+  lookback) = the window is the pair's first. `new_dst_ip_rate = new_dst_ip / uniq_dst_ip`, `new_dst_port_rate`
+  likewise (NULL ports ignored, NULL without ports); counts, `host_first_seen`, `history_days` kept. Ties: flows in
+  one window never see each other, so equal timestamps and row order cannot matter; `flow_sequence` unused.
+  State: append-only seen set partitioned by first-seen day + `manifest.json` (state version, `window_minutes`,
+  per-lake-day fingerprint of file names + sizes). Rerun recomputes from the earliest new/changed/removed day (or
+  day with missing files) only; unchanged lake → nothing recomputed; crash → resumes at first unfinished day;
+  other `window_minutes` or `--rebuild` → full. Registry-checked inputs (`src_ip`, `flow_start`, `dst_ip`,
+  `dst_port`: usable, provisional). Not in `run`, not a model input; V0 features byte-identical in test.
+  Synthetic run (`data/synth`, committed): 222,760 rows in 3 s, `uniq_dst_*` equal to V0 on every row; day 1 is
+  warm-up (all 300 hosts' first windows; mean new_dst_ip_rate 0.20); days 2–6 mean 0.026–0.031 with ~1,600–1,900
+  windows/day containing a new peer (the generator draws new external peers daily); new ports ≈ 0 on clean days.
+  Seen set: 300 hosts, 19,645 (host, dst_ip), 2,373 (host, dst_port) keys. Rerun: nothing recomputed.
+  Injections: horizontal scans rank #1 per day by `new_dst_ip` (42–45 new peers in a window), vertical scans #1 by
+  `new_dst_port` (152–157); brute force, beaconing and exfil add ≤ 1 new peer, as expected. By rate alone 2,985
+  windows on days 2–6 tie at 1.0 (99% with a single destination), so the rate needs its counts (feature cards, V2-5).
+  Mock lake (scratch copy, not committed): no host continuity, 95–99.6% of rows are a host's first window, rates ≈ 1.
+  Leakage test mutation-checked: a "not contacted again later" rule fails it.
 - V2-2 host baselines (ADR-018): `src/netanomaly/baselines.py`, `netanomaly baselines` →
   `features/host_baseline/flow_date=…/part-0.parquet`; settings `baseline:` in config.yaml. `bytes_out_robust_z` =
   (ln(1 + bytes_out) − median) / (1.4826 · MAD) over the 7 whole UTC days before the window's day (never the same
@@ -117,7 +137,7 @@ prerequisite for real-data use, not a V1 task (see below). V2 — Feature resear
 - Code review: 2 CRITICAL + 2 HIGH findings fixed with regression tests.
 
 ## Tests
-145 passing, 0 failing (15 new for V2-2: 14 in `tests/test_baselines.py`, 1 in `tests/test_synth_pipeline.py`; 22 for V2-1: 21 in `tests/test_feature_registry.py`, 1 lake check in
+159 passing, 0 failing (14 new for V2-3: 13 in `tests/test_novelty.py`, 1 in `tests/test_synth_pipeline.py`; 15 new for V2-2: 14 in `tests/test_baselines.py`, 1 in `tests/test_synth_pipeline.py`; 22 for V2-1: 21 in `tests/test_feature_registry.py`, 1 lake check in
 `tests/test_synth_pipeline.py`; 46 in `tests/test_timestamps.py`; 3 are tiny-scale smoke tests of `scripts/memtest.py`; the 20M-row run is manual). ruff: 3 pre-existing ISC004 findings in `schema.py` (rule new in
 ruff 0.16.9; present on HEAD before V1-1); all other files clean.
 
@@ -168,14 +188,20 @@ ruff 0.16.9; present on HEAD before V1-1); all other files clean.
   peer level looks better here than it may be. Fallback is exercised by tests and mock data, not by synthetic
   attacks. Thresholds (7 days, 30 windows, 2 days, 5 hosts) are untuned. Rebuilding after late flows for past
   days changes later baselines (backfill, not leakage); there is no as-of snapshot. Only `bytes_out` is baselined.
+- V2-3 limits: rates are 1 in a host's first window and coarse for windows with few destinations (1 of 1 = 1.0);
+  no minimum support or smoothing yet. The first days of any lake are warm-up (`history_days`); there is no
+  hour/role context, so a host that routinely meets new external peers (web clients) looks as novel as one that
+  never does. The seen set never expires and grows with distinct (host, destination) pairs — size on real volumes is
+  unmeasured. Change detection uses file names + sizes (a same-name, same-size rewrite needs `--rebuild`); late flows
+  recompute every later day. `dst_ip`/`dst_port` meanings are unvalidated (0/42), so the features are provisional.
+  NAT/DHCP (one `src_ip` = several machines over time) would blur the seen set; not modelled.
 - Existing `data/lake` and `data/synth/lake` were built by V0 code; re-ingest is not needed (output is identical)
   and would only add `rejected_rows` to the ledger.
 
 ## Important decisions
-See `DECISIONS.md` (ADR-001 … ADR-018).
+See `DECISIONS.md` (ADR-001 … ADR-019).
 
 ## Next task
-V2-3: new-destination / new-port rates from a persistent seen-set built from strictly prior data (registry
-`new_dst_ip_rate`, `new_dst_port_rate`; see `TODO.md`), with a leakage test like V2-2's. Mock/synthetic data
-only; unvalidated field meanings stay provisional. Real-exporter semantic validation remains an external
-prerequisite.
+V2-4: timing regularity over ≥ 1 h windows for beaconing (registry `interarrival_cv`; see `TODO.md`), with a leakage
+test if it uses history. Mock/synthetic data only; unvalidated field meanings stay provisional. Real-exporter
+semantic validation remains an external prerequisite.

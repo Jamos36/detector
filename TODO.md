@@ -21,7 +21,8 @@ Cannot be done in this mock/synthetic repo (ADR-012); must be completed before a
       `contracts/features_v1.yaml`, generated `FEATURES.md`.
 - [x] V2-2 Host baselines from strictly prior data (median/MAD) + leakage test; peer-group fallback + baseline_quality
       — ADR-018, `baselines.py`, `netanomaly baselines`.
-- [ ] New-destination / new-port rates (persistent seen-set, prior data only).
+- [x] V2-3 New-destination / new-port rates (persistent seen-set, prior data only) — ADR-019, `novelty.py`,
+      `netanomaly novelty`.
 - [ ] Timing regularity over ≥1 h windows (beaconing).
 - [ ] Feature cards: distribution, missingness, cardinality, redundancy, PSI stability, single-feature AUROC on injections.
 

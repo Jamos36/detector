@@ -10,7 +10,7 @@ Operating rules for Claude in this repo. Project state lives in files, not in ch
 ## Commands
 - `uv run pytest -q` — all tests (must pass before any commit)
 - `uv run ruff check src tests`
-- `uv run netanomaly [--root DIR] generate|ingest|features|baselines|train|score|alerts|evaluate|run|schema-doc|feature-doc`
+- `uv run netanomaly [--root DIR] generate|ingest|features|baselines|novelty|train|score|alerts|evaluate|run|schema-doc|feature-doc`
 - Synthetic data lives under `--root data/synth`; mock data under `data/`.
 - Bash on Windows: prefix Python runs with `PYTHONIOENCODING=utf-8`.
 
