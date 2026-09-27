@@ -140,6 +140,13 @@ def usable_features(registry: Registry, contract: Contract, level: Level | None 
             if e.eligible and (level is None or e.feature.level is level)]
 
 
+def require_usable(registry: Registry, contract: Contract, names: tuple[str, ...]) -> None:
+    """Refuse to build features the registry does not rate usable against the contract."""
+    usable = set(usable_features(registry, contract))
+    if blocked := [f for f in names if f not in usable]:
+        raise ValueError(f"features not usable under the contract (see FEATURES.md): {blocked}")
+
+
 def check_against_contract(registry: Registry, contract: Contract) -> None:
     """Fail fast if the registry was written for another contract or references unknown columns."""
     if (registry.contract, registry.contract_schema_version) != (contract.name, contract.schema_version):

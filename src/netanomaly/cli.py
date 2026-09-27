@@ -16,7 +16,7 @@ from pathlib import Path
 
 import joblib
 
-from netanomaly import alerts, baselines, feature_registry, features, iforest, quality
+from netanomaly import alerts, baselines, feature_registry, features, iforest, novelty, quality
 from netanomaly.config import Paths, Settings, load_settings
 from netanomaly.db import connect
 from netanomaly.ingest import ingest_directory
@@ -108,6 +108,16 @@ def cmd_baselines(args: argparse.Namespace, s: Settings) -> None:
     log.info("host-baseline rows: %d (lookback %d days) -> %s", rows, s.baseline.lookback_days, out)
 
 
+def cmd_novelty(args: argparse.Namespace, s: Settings) -> None:
+    registry = feature_registry.load_registry()
+    novelty.require_usable_inputs(registry, load_contract(registry.contract))
+    out, state = s.paths.features / "host_novelty", s.paths.features / "novelty_state"
+    run = novelty.build_host_novelty(connect(s.duckdb), s.paths.lake, out, state, s.window_minutes,
+                                     rebuild=getattr(args, "rebuild", False))
+    recomputed = f"{run.recomputed[0]}..{run.recomputed[-1]}" if run.recomputed else "none (lake unchanged)"
+    log.info("host-novelty rows: %d over %d days; recomputed: %s -> %s", run.rows, run.days, recomputed, out)
+
+
 def cmd_train(args: argparse.Namespace, s: Settings) -> None:
     _, manifest, out = iforest.train(connect(s.duckdb), _host_window_dir(s), list(features.HOST_WINDOW_FEATURES),
                                      s.model, s.paths.models)
@@ -171,6 +181,9 @@ def build_parser() -> argparse.ArgumentParser:
                        ("train", cmd_train), ("score", cmd_score), ("alerts", cmd_alerts), ("run", cmd_run),
                        ("schema-doc", cmd_schema_doc), ("feature-doc", cmd_feature_doc)):
         sub.add_parser(name).set_defaults(func=func)
+    n = sub.add_parser("novelty", help="new-destination / new-port rates from a persistent seen set (V2-3)")
+    n.add_argument("--rebuild", action="store_true", help="discard the seen set and recompute every day")
+    n.set_defaults(func=cmd_novelty)
     q = sub.add_parser("dq", help="data-quality report for one ingest batch -> outputs/dq/dq_<batch>.{json,md}")
     q.add_argument("--batch", help="ingest_batch_id to report on (default: newest in the ledger)")
     q.set_defaults(func=cmd_dq)

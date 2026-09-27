@@ -172,3 +172,26 @@ def test_baselines_cover_every_host_window_without_changing_v0_features(synth_ro
     assert rows > 0 and mismatched == 0
     # two synthetic days: day 1 has no earlier data; day 2 has one earlier day < min_days (2)
     assert by_day == ["2026-09-01:none", "2026-09-02:none"]
+
+
+# --- host novelty (V2-3) -----------------------------------------------------
+
+def test_novelty_covers_every_host_window_and_matches_v0_fan_out(synth_root, con):
+    hw = synth_root / "features" / "host_window"
+    before = sorted(p.read_bytes() for p in hw.rglob("*.parquet"))
+    main(["--root", str(synth_root), "novelty"])
+    assert sorted(p.read_bytes() for p in hw.rglob("*.parquet")) == before  # V0 features untouched
+    nov = (synth_root / "features" / "host_novelty" / "**" / "*.parquet").as_posix()
+    rows, mismatched, first_windows_not_new, out_of_range = con.sql(f"""
+        SELECT count(*),
+               count(*) FILTER (WHERE h.uniq_dst_ip IS DISTINCT FROM n.uniq_dst_ip
+                                   OR h.uniq_dst_port IS DISTINCT FROM n.uniq_dst_port),
+               count(*) FILTER (WHERE n.window_start = n.host_first_seen AND n.new_dst_ip_rate <> 1),
+               count(*) FILTER (WHERE NOT n.new_dst_ip_rate BETWEEN 0 AND 1 OR NOT n.new_dst_port_rate BETWEEN 0 AND 1)
+        FROM read_parquet('{nov}') n
+        FULL JOIN read_parquet('{(hw / '**' / '*.parquet').as_posix()}', hive_partitioning = true) h
+          USING (src_ip, window_start)""").fetchone()
+    assert rows > 0 and (mismatched, first_windows_not_new, out_of_range) == (0, 0, 0)
+    manifest = (synth_root / "features" / "novelty_state" / "manifest.json").read_bytes()
+    main(["--root", str(synth_root), "novelty"])  # rerun: lake unchanged, state untouched
+    assert (synth_root / "features" / "novelty_state" / "manifest.json").read_bytes() == manifest

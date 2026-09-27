@@ -154,3 +154,25 @@ Consequences: baselines lag up to 24 h; the first `min_days` days of any lake ha
 for past days change later baselines when rebuilt (backfill, not leakage). Not a V0 model input.
 Revisit when: V2-5 feature cards or V4 evaluation show the daily lag, the subnet peer group or the thresholds
 hurt detection, or real data shows subnets that do not group similar hosts.
+
+## ADR-019: Novelty = first window of a (host, destination) pair; append-only seen set with day fingerprints
+Decision (V2-3): a `dst_ip` (or `dst_port`) is new in host-window W when the host has no flow to it with `flow_start`
+before W's start, over the whole lake (no lookback). Equivalently W is the pair's first window. Rates divide by the
+window's distinct destinations/ports. The seen set is stored append-only, partitioned by first-seen UTC day, with a
+manifest of per-lake-day fingerprints (file names + sizes); a rerun recomputes from the earliest changed day only.
+Reason: window granularity makes ties harmless: flows with equal `flow_start` share one window and one history, so
+no tie-break rule (and no `flow_sequence`, ADR-016) is needed. "First window of the pair" is order-free and cannot
+be moved by later rows. Unlimited history matches "never contacted before" and needs no expiry constant; keeping
+history within the same day (unlike ADR-018) is safe because it only uses strictly earlier windows. Partitioning by
+first-seen day makes the state append-only, and a late or changed lake day can only affect that day and later ones,
+so recomputing from the earliest changed day is exact. Fingerprints are cheap (no data scan).
+Rejected: per-flow novelty ordered by `flow_start` (needs a tie-break; same-time flows would see each other);
+whole-day history like ADR-018 (a destination first contacted in the morning would still count as new in every
+window that day: a 24 h lag with no leakage benefit, since earlier windows are already strictly prior); a lookback/expiry window (a constant with no evidence);
+rewriting one state file per day (cost grows with state size every day); content hashing of lake files (full scan).
+Consequences: rates are 1 in a host's first window and noisy for windows with few destinations (counts are kept);
+the first days of any lake are warm-up (`history_days`); the state grows without bound; a file rewritten with the
+same name and size is not detected (use `--rebuild`); late data triggers recomputation of all later days.
+Revisit when: V2-5 feature cards show the rate needs smoothing/min-support, state size becomes a problem on real
+volumes (expiry or bloom filter), or collector documentation changes the meaning of `dst_ip`/`dst_port`.
+

@@ -33,7 +33,7 @@ import duckdb
 
 from netanomaly.config import BaselineSettings
 from netanomaly.db import sql_literal
-from netanomaly.feature_registry import Registry, usable_features
+from netanomaly.feature_registry import Registry, require_usable
 from netanomaly.features import flows_glob
 from netanomaly.schema import Contract
 
@@ -52,9 +52,7 @@ class BaselineQuality(StrEnum):
 
 def require_usable_inputs(registry: Registry, contract: Contract) -> None:
     """Refuse to build a baseline feature the registry does not rate usable against the contract."""
-    usable = set(usable_features(registry, contract))
-    if blocked := [f for f in BASELINE_FEATURES if f not in usable]:
-        raise ValueError(f"baseline features not usable under the contract (see FEATURES.md): {blocked}")
+    require_usable(registry, contract, BASELINE_FEATURES)
 
 
 def input_sql(lake: Path, window_minutes: int) -> str:

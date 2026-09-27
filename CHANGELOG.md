@@ -1,6 +1,13 @@
 # Changelog
 
 ## Unreleased
+- feat (V2-3): host novelty `netanomaly novelty [--rebuild]` → `features/host_novelty/` (ADR-019).
+  `new_dst_ip_rate` / `new_dst_port_rate` = share of a host-window's distinct destinations / ports that the host
+  never used in any earlier window (`flow_start` before the window start); flows in the same window, incl. tied
+  timestamps, are never each other's history. Persistent append-only seen set `features/novelty_state/` with a
+  per-lake-day fingerprint manifest: reruns recompute only from the earliest changed day, resume after a crash.
+  Refuses to run if the registry rates its inputs unusable. Leakage test mutation-checked. Not part of `run`;
+  V0 model unchanged. Registry entries now implemented; `feature_registry.require_usable` shared with baselines.
 - feat (V2-2): host baselines `netanomaly baselines` → `features/host_baseline/` (ADR-018). `bytes_out_robust_z` =
   robust z of `ln(1 + bytes_out)` against the median/MAD of the 7 whole UTC days before the window's day; fallback
   host → `src_subnet` peer group → global → none, recorded in `baseline_quality` with support counts. Refuses to run
