@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+- feat (V2-4): timing regularity `netanomaly timing` → `features/host_timing/` (ADR-020). `interarrival_cv` = minimum,
+  over the host's (`src_ip`, `dst_ip`) series with ≥ 10 distinct `flow_start` instants in the 2 h before the window
+  (config `timing:`), of the CV of consecutive gaps; the window's own flows and anything later never count. Tied
+  timestamps are one event; order is `flow_start` only. `timing_quality` ok/insufficient/none, `history_complete`
+  and support counts. Refuses to run if the registry rates its inputs unusable. Leakage, tie and shuffle tests
+  mutation-checked. Not part of `run`; V0 model unchanged. Registry entry now implemented (prior_history).
 - feat (V2-3): host novelty `netanomaly novelty [--rebuild]` → `features/host_novelty/` (ADR-019).
   `new_dst_ip_rate` / `new_dst_port_rate` = share of a host-window's distinct destinations / ports that the host
   never used in any earlier window (`flow_start` before the window start); flows in the same window, incl. tied

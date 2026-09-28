@@ -176,3 +176,25 @@ same name and size is not detected (use `--rebuild`); late data triggers recompu
 Revisit when: V2-5 feature cards show the rate needs smoothing/min-support, state size becomes a problem on real
 volumes (expiry or bloom filter), or collector documentation changes the meaning of `dst_ip`/`dst_port`.
 
+## ADR-020: Timing regularity = minimum interarrival CV per destination over the hours before the window
+Decision (V2-4): for each host-window W, `interarrival_cv` is computed only from the host's flows with `flow_start`
+in [W - `history_hours`, W) (default 2 h, allowed 1–24 h). Series = (`src_ip`, `dst_ip`) with distinct `flow_start`
+instants as events; a series needs ≥ `min_events` (10) events; CV = population std / mean of consecutive gaps;
+the host value is the minimum CV over its qualifying series, NULL with `timing_quality` insufficient/none otherwise.
+Reason: the user requirement is that no flow in the scored window or later may affect it, so the window itself is
+excluded, unlike ADR-019 where it is the object being scored. A trailing hour-scale window is what makes periodicity
+visible (5-minute windows cannot) and keeps the result fresh (no whole-day lag as in ADR-018). Distinct instants make
+ties harmless without a tie-break (ADR-016 forbids `flow_sequence`). CV is scale-free, so beacons with different
+periods compare directly; the minimum over destinations surfaces one regular conversation among many irregular
+ones. Per-destination series need no peer fallback: another host's flows do not describe this conversation.
+Rejected: including W's own flows (explicitly disallowed, and would let a burst inside W move its own score);
+per-(dst_ip, dst_port) series (fewer events per series; C2 can use one IP on several ports); robust CV (MAD/median)
+or spectral/autocorrelation tests (more parameters, no evidence yet that CV is insufficient); counting tied flows as
+zero gaps (duplicate exports would look irregular); whole-day history (24 h lag, as in ADR-018).
+Consequences: the feature describes the preceding hours, so it lags a beacon's start by ~`min_events` periods and
+stays low up to `history_hours` after it stops; periods above ~`history_hours / (min_events - 1)` (13 min by default)
+are invisible; jitter > ~50% or missed check-ins raise the CV; exporter active-timeout splits of long flows and
+legitimate polling (NTP, updates, monitoring) are also regular. Every run recomputes all days.
+Revisit when: V2-5 feature cards show CV is dominated by legitimate periodic services, beacons with longer periods or
+heavy jitter matter, or collector documentation shows `flow_start` is not the flow's first packet time.
+

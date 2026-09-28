@@ -10,6 +10,7 @@
 # status:         implemented - computed by the current pipeline: V0 model inputs (features.HOST_WINDOW_FEATURES)
 #                               or host baselines, not model inputs (baselines.BASELINE_FEATURES, V2-2)
 #                               or host novelty, not model inputs (novelty.NOVELTY_FEATURES, V2-3)
+#                               or timing regularity, not model inputs (timing.TIMING_FEATURES, V2-4)
 #                 candidate   - not implemented; `task` names the roadmap task that would build it, if scheduled
 # temporal_scope: window        - uses only rows inside its own flow/window (default)
 #                 prior_history - also uses history, which must be strictly earlier than the window (no leakage)
@@ -214,15 +215,18 @@ features:
     attack_hypotheses:
       - {technique: T1046, name: Network Service Discovery}
 
-  # --- candidates for later V2 tasks (not implemented) -----------------------------------------------------
+  # --- implemented (V2-4 timing regularity, timing.py; not a V0 model input) -----------------------------
 
   - name: interarrival_cv
     level: host_window
-    status: candidate
-    task: V2-4
+    status: implemented
+    temporal_scope: prior_history
     inputs: [src_ip, dst_ip, flow_start]
-    transform: "coefficient of variation of gaps between flow_start per (src_ip, dst_ip) over a window of at
-      least 1 hour; minimum over the host's peers"
+    transform: "per (src_ip, 5-minute window W): over flows with flow_start in [W - 2 h, W) (config
+      timing.history_hours, >= 1 h; never W itself or later), one series per (src_ip, dst_ip) of its distinct
+      flow_start instants (ties = one event); CV = stddev_pop / mean of consecutive gaps; series with < 10 events
+      (timing.min_events) are ignored; value = minimum CV over the host's series, NULL when none qualifies
+      (timing_quality insufficient / none)"
     rationale: "Regular, periodic connections (low CV) are typical of beaconing; 5-minute windows cannot show it."
     attack_hypotheses:
       - {technique: T1071, name: Application Layer Protocol}

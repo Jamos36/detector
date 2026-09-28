@@ -30,6 +30,10 @@ baseline:                    # host baselines (netanomaly baselines, V2-2)
   min_days: 2                # ... on >= 2 distinct days, and MAD > 0; otherwise fall back to the next level
   min_peer_hosts: 5          # peer and global levels also need >= 5 distinct hosts
 
+timing:                      # timing regularity (netanomaly timing, V2-4)
+  history_hours: 2           # a window starting at W uses flows in [W - 2 h, W); never W itself or later
+  min_events: 10             # a (host, destination) series needs >= 10 distinct flow_start instants (9 gaps)
+
 batch_rows: 50000          # rows per Arrow batch when scoring
 window_minutes: 5
 alert_budget_per_day: 100  # top-K host-windows per day, not a severity threshold

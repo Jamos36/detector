@@ -23,7 +23,7 @@ Cannot be done in this mock/synthetic repo (ADR-012); must be completed before a
       — ADR-018, `baselines.py`, `netanomaly baselines`.
 - [x] V2-3 New-destination / new-port rates (persistent seen-set, prior data only) — ADR-019, `novelty.py`,
       `netanomaly novelty`.
-- [ ] Timing regularity over ≥1 h windows (beaconing).
+- [x] V2-4 Timing regularity over ≥1 h windows (beaconing) — ADR-020, `timing.py`, `netanomaly timing`.
 - [ ] Feature cards: distribution, missingness, cardinality, redundancy, PSI stability, single-feature AUROC on injections.
 
 ## V3 — Isolation Forest

@@ -49,6 +49,14 @@ class BaselineSettings(BaseModel):
     min_peer_hosts: int = Field(default=5, ge=2)  # peer and global levels only
 
 
+class TimingSettings(BaseModel):
+    # Timing regularity (V2-4, timing.py): a window starting at W uses flows in [W - history_hours, W) only.
+    # At most 24 h, so a window's history spans its own day and the day before.
+    history_hours: int = Field(default=2, ge=1, le=24)
+    # A (src_ip, dst_ip) series needs this many distinct flow_start instants in the history (min_events - 1 gaps).
+    min_events: int = Field(default=10, ge=3)
+
+
 class ModelSettings(BaseModel):
     train_sample_rows: int = Field(default=200_000, ge=1_000)
     n_estimators: int = Field(default=200, ge=10)
@@ -63,6 +71,7 @@ class Settings(BaseModel):
     ingest: IngestSettings = IngestSettings()
     dq: DQSettings = DQSettings()
     baseline: BaselineSettings = BaselineSettings()
+    timing: TimingSettings = TimingSettings()
     model: ModelSettings = ModelSettings()
     batch_rows: int = Field(default=50_000, ge=1_000)
     window_minutes: int = Field(default=5, ge=1)

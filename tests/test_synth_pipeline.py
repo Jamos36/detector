@@ -195,3 +195,25 @@ def test_novelty_covers_every_host_window_and_matches_v0_fan_out(synth_root, con
     manifest = (synth_root / "features" / "novelty_state" / "manifest.json").read_bytes()
     main(["--root", str(synth_root), "novelty"])  # rerun: lake unchanged, state untouched
     assert (synth_root / "features" / "novelty_state" / "manifest.json").read_bytes() == manifest
+
+
+# --- timing regularity (V2-4) ------------------------------------------------
+
+def test_timing_covers_every_host_window_and_finds_the_injected_beacon(synth_root, con):
+    hw = synth_root / "features" / "host_window"
+    before = sorted(p.read_bytes() for p in hw.rglob("*.parquet"))
+    main(["--root", str(synth_root), "timing"])
+    assert sorted(p.read_bytes() for p in hw.rglob("*.parquet")) == before  # V0 features untouched
+    tim = (synth_root / "features" / "host_timing" / "**" / "*.parquet").as_posix()
+    rows, unmatched, bad_quality = con.sql(f"""
+        SELECT count(*), count(*) FILTER (WHERE t.src_ip IS NULL OR h.src_ip IS NULL),
+               count(*) FILTER (WHERE (t.timing_quality = 'ok') <> (t.interarrival_cv IS NOT NULL))
+        FROM read_parquet('{tim}') t
+        FULL JOIN read_parquet('{(hw / '**' / '*.parquet').as_posix()}', hive_partitioning = true) h
+          USING (src_ip, window_start)""").fetchone()
+    assert rows > 0 and (unmatched, bad_quality) == (0, 0)
+    beacon = next(r for r in csv.DictReader((synth_root / "truth" / "injections.csv").open(encoding="utf-8"))
+                  if r["attack_type"] == "beaconing")
+    top_src, top_dst = con.sql(f"SELECT src_ip, timing_dst_ip FROM read_parquet('{tim}') "
+                               "ORDER BY interarrival_cv NULLS LAST, src_ip, window_start LIMIT 1").fetchone()
+    assert (top_src, top_dst) == (beacon["src_ip"], beacon["dst"])

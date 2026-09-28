@@ -16,7 +16,7 @@ from pathlib import Path
 
 import joblib
 
-from netanomaly import alerts, baselines, feature_registry, features, iforest, novelty, quality
+from netanomaly import alerts, baselines, feature_registry, features, iforest, novelty, quality, timing
 from netanomaly.config import Paths, Settings, load_settings
 from netanomaly.db import connect
 from netanomaly.ingest import ingest_directory
@@ -118,6 +118,16 @@ def cmd_novelty(args: argparse.Namespace, s: Settings) -> None:
     log.info("host-novelty rows: %d over %d days; recomputed: %s -> %s", run.rows, run.days, recomputed, out)
 
 
+def cmd_timing(args: argparse.Namespace, s: Settings) -> None:
+    registry = feature_registry.load_registry()
+    timing.require_usable_inputs(registry, load_contract(registry.contract))
+    out = s.paths.features / "host_timing"
+    rows = timing.build_host_timing(connect(s.duckdb), s.paths.lake, out, s.duckdb.temp_directory,
+                                    s.window_minutes, s.timing)
+    log.info("host-timing rows: %d (history %d h, min %d events) -> %s", rows, s.timing.history_hours,
+             s.timing.min_events, out)
+
+
 def cmd_train(args: argparse.Namespace, s: Settings) -> None:
     _, manifest, out = iforest.train(connect(s.duckdb), _host_window_dir(s), list(features.HOST_WINDOW_FEATURES),
                                      s.model, s.paths.models)
@@ -178,6 +188,7 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--format", choices=("parquet", "csv"), default="parquet")
     g.set_defaults(func=cmd_generate)
     for name, func in (("ingest", cmd_ingest), ("features", cmd_features), ("baselines", cmd_baselines),
+                       ("timing", cmd_timing),
                        ("train", cmd_train), ("score", cmd_score), ("alerts", cmd_alerts), ("run", cmd_run),
                        ("schema-doc", cmd_schema_doc), ("feature-doc", cmd_feature_doc)):
         sub.add_parser(name).set_defaults(func=func)

@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from netanomaly import baselines, features, iforest, novelty
+from netanomaly import baselines, features, iforest, novelty, timing
 from netanomaly.feature_registry import (
     DerivedColumn,
     Level,
@@ -47,7 +47,7 @@ def test_features_md_is_generated_from_registry(registry, contract):
 
 def test_implemented_features_match_the_pipeline(registry):
     implemented = [f for f in registry.features if f.status is Status.IMPLEMENTED]
-    not_model_inputs = set(baselines.BASELINE_FEATURES) | set(novelty.NOVELTY_FEATURES)
+    not_model_inputs = set(baselines.BASELINE_FEATURES) | set(novelty.NOVELTY_FEATURES) | set(timing.TIMING_FEATURES)
     model_inputs = [f for f in implemented if f.name not in not_model_inputs]
     assert tuple(f.name for f in model_inputs) == features.HOST_WINDOW_FEATURES
     assert {f.name for f in implemented} - {f.name for f in model_inputs} == not_model_inputs
@@ -135,8 +135,8 @@ def test_duplicate_feature_names_are_rejected():
                                  "features": [entry, entry]})
 
 
-def test_baseline_and_novelty_candidates_are_marked_prior_history(registry):
-    # V2-2/V2-3 use past windows, so the no-leakage rule applies; the scope must say so.
+def test_history_features_are_marked_prior_history(registry):
+    # V2-2/V2-3/V2-4 use past windows, so the no-leakage rule applies; the scope must say so.
     for f in registry.features:
-        if f.name in baselines.BASELINE_FEATURES or f.name in novelty.NOVELTY_FEATURES:
+        if f.name in (*baselines.BASELINE_FEATURES, *novelty.NOVELTY_FEATURES, *timing.TIMING_FEATURES):
             assert f.temporal_scope is TemporalScope.PRIOR_HISTORY, f.name
