@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class DuckDBSettings(BaseModel):
@@ -73,6 +73,20 @@ class SplitSettings(BaseModel):
     train_fraction: float = Field(default=0.5, gt=0, lt=1)
 
 
+class StabilitySettings(BaseModel):
+    # Stability report (V3, stability.py): label-free agreement of rankings on the held-out score days.
+    seeds: int = Field(default=10, ge=2)  # seed-stability models; their mean score is the reference
+    sample_sizes: list[int] = Field(default=[500, 1_000, 2_000, 5_000, 10_000, 20_000, 50_000], min_length=1)
+    curve_seeds: int = Field(default=5, ge=1)  # models per sample size (seeds disjoint from the reference)
+
+    @field_validator("sample_sizes")
+    @classmethod
+    def _positive(cls, v: list[int]) -> list[int]:
+        if min(v) < 1:
+            raise ValueError("sample sizes must be >= 1")
+        return v
+
+
 class ModelSettings(BaseModel):
     train_sample_rows: int = Field(default=200_000, ge=1_000)
     n_estimators: int = Field(default=200, ge=10)
@@ -91,6 +105,7 @@ class Settings(BaseModel):
     feature_cards: FeatureCardSettings = FeatureCardSettings()
     split: SplitSettings = SplitSettings()
     model: ModelSettings = ModelSettings()
+    stability: StabilitySettings = StabilitySettings()
     batch_rows: int = Field(default=50_000, ge=1_000)
     window_minutes: int = Field(default=5, ge=1)
     alert_budget_per_day: int = Field(default=100, ge=1)

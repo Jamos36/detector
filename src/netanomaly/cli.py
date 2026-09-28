@@ -27,6 +27,7 @@ from netanomaly import (
     labels,
     novelty,
     quality,
+    stability,
     timing,
 )
 from netanomaly.config import Paths, Settings, load_settings
@@ -173,6 +174,21 @@ def cmd_score(args: argparse.Namespace, s: Settings) -> None:
     log.info("scored %d rows after %s with %s", n, manifest.score_after, manifest.model_version)
 
 
+def cmd_stability(args: argparse.Namespace, s: Settings) -> None:
+    registry = feature_registry.load_registry()
+    con = connect(s.duckdb)
+    names = iforest.model_features(registry, load_contract(registry.contract))
+    split = iforest.time_split(iforest.feature_dates(con, _host_window_dir(s)), s.split.train_fraction)
+    report = stability.build_report(con, _host_window_dir(s), names, iforest.log1p_features(registry, names), split,
+                                    s.model, s.stability, s.alert_budget_per_day,
+                                    s.duckdb.temp_directory / "stability", s.batch_rows, registry.registry_version)
+    _, md_path = stability.write_report(report, s.paths.outputs / stability.REPORT_DIR)
+    ss = report["seed_stability"]
+    log.info("stability (label-free, %d scored rows): seed rho median %.4f, top-%d overlap median %.3f; "
+             "%d curve points -> %s", report["score_rows"], ss["spearman"]["median"], report["top_k"],
+             ss["topk_overlap_mean"]["median"], len(report["sample_size_curve"]), md_path)
+
+
 def cmd_alerts(args: argparse.Namespace, s: Settings) -> None:
     out = s.paths.outputs / ALERTS_FILE
     n = alerts.write_top_alerts(connect(s.duckdb), s.paths.outputs / SCORES_FILE, s.paths.lake,
@@ -235,6 +251,8 @@ def build_parser() -> argparse.ArgumentParser:
     n = sub.add_parser("novelty", help="new-destination / new-port rates from a persistent seen set (V2-3)")
     n.add_argument("--rebuild", action="store_true", help="discard the seen set and recompute every day")
     n.set_defaults(func=cmd_novelty)
+    st = sub.add_parser("stability", help="sample-size curve and seed stability on the held-out days -> outputs/stability/ (V3)")
+    st.set_defaults(func=cmd_stability)
     fc = sub.add_parser("feature-cards", help="per-feature diagnostics, synthetic AUROC -> outputs/feature_cards/ (V2-5)")
     fc.set_defaults(func=cmd_feature_cards)
     q = sub.add_parser("dq", help="data-quality report for one ingest batch -> outputs/dq/dq_<batch>.{json,md}")

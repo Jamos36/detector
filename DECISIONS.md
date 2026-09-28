@@ -254,3 +254,25 @@ but real training days are not known to be clean. A lake needs >= 2 days; `run` 
 Revisit when: evaluation needs rolling retraining or a gap between training and scoring, prior-history features get
 a NULL policy, or collector documentation changes a field's confidence (the model set follows automatically).
 
+## ADR-023: Stability is label-free ranking agreement on the held-out days against a seed-ensemble reference
+Decision (V3-2): `netanomaly stability` trains models with the V3 split and inputs and compares their rankings of the
+score days, without labels. Reference = mean score of 10 seed models on the full training sample. Seed stability =
+all 45 pairs of those models; sample-size curve = 5 models per size (500 … 50,000 rows plus all training rows,
+seeds disjoint from the reference) against the reference. Metrics: Spearman rho over all scored rows (average ranks)
+and top-K overlap per day with K = the alert budget (100). Output `outputs/stability/stability.{json,md}`.
+Reason: the alert budget is what an analyst sees, so top-K overlap per day measures the stability that matters;
+rho covers the whole ranking. Averaging seeds gives a low-noise reference, so the curve shows how close a single
+model at size n gets to it; a single seed-42 reference would mix its own noise into every point. Seeds disjoint from
+the reference keep the curve from comparing a model with itself. No labels, so the method runs on real data.
+Rejected: recall-based stability (uses labels; recall@K across seeds belongs to V4 evaluation); stability over the
+training days (not held out); Jaccard instead of overlap share (same order for equal-size sets, harder to read);
+changing `n_estimators`, `max_samples` or ensembling in the model now (a model change, left to evaluation).
+Findings (synthetic, label-free, not performance): rankings agree globally (seed rho 0.986–0.995), but two single
+200-tree forests share only 75% of a day's top-100 (median; 59% worst pair, 57% worst day). The curve reaches
+~0.85 overlap with the reference from 2,000–5,000 rows and does not improve with more rows (0.86 at all 111,355): above
+a few thousand rows the forest's own randomness, not the sample size, limits top-K stability. Mock lake (scratch
+copy): seed overlap 0.92, rho 0.987.
+Consequences: the default `train_sample_rows` (200,000) is far past the plateau; top-K membership of a single model
+is noticeably seed-dependent, so V4 should report recall@K across seeds and consider more trees or seed averaging.
+Revisit when: V4 evaluates recall across seeds, or the model or its inputs change.
+

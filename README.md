@@ -21,7 +21,9 @@ uv run netanomaly --root data/synth run
 uv run netanomaly --root data/synth evaluate --k 50 100 500
 ```
 
-Stages can be run individually: `ingest`, `features`, `train`, `score`, `alerts`.
+Stages can be run individually: `ingest`, `features`, `train`, `score`, `alerts`. `train` needs >= 2 days: it
+fits on the first half of the days and `score` writes only the later days (V3 time split, ADR-022).
+`stability` reports label-free seed and sample-size stability of the rankings (ADR-023).
 
 ## Data flow
 
@@ -29,8 +31,8 @@ Stages can be run individually: `ingest`, `features`, `train`, `score`, `alerts`
 |---|---|---|
 | ingest | `raw/*.csv, *.parquet` | `lake/flows/flow_date=YYYY-MM-DD/`, `lake/_ingest_ledger.jsonl` |
 | features | lake | `features/host_window/flow_date=.../` |
-| train | features (reservoir sample) | `models/iforest-<ts>/model.joblib`, `manifest.json` |
-| score | features (Arrow batches) | `outputs/scores.parquet` |
+| train | features on the training days (hash sample), registry inputs | `models/iforest-<ts>/model.joblib`, `manifest.json` |
+| score | features after the training days (Arrow batches) | `outputs/scores.parquet` |
 | alerts | scores + lake | `outputs/top_alerts.csv` (top-K per day, with source files and flow_ids) |
 
 ## Ingestion rules

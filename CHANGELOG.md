@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- feat (V3-2): `netanomaly stability` → `outputs/stability/stability.{json,md}` (ADR-023). Label-free ranking
+  agreement on the held-out score days: seed stability (45 pairs of 10 seeds) and a sample-size curve (5 seeds per size,
+  500 … all training rows) against the mean of the seed models; Spearman rho (average ranks) and top-K overlap per day.
+  Settings `stability:` in config.yaml. Not part of `run`; writes no model artifacts.
 - feat (V3-1): time-based train/score split (ADR-022). `train` fits on the first floor(n_days x `split.train_fraction`)
   (0.5) UTC days of host_window, filtered before a per-row hash sample; `score` writes only later days. Inputs come
   from the registry (usable, implemented, window-scope host_window): 7 features, dropping V0 `syn_only_ratio` /

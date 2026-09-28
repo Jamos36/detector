@@ -23,6 +23,7 @@ Python 3.13 (uv), DuckDB, Parquet/PyArrow, scikit-learn, pydantic, pytest. CPU o
 | feature-cards | `feature_cards.py`, `feature_report.py`, `labels.py` | features (all four tables) + lake + truth (if present) | `outputs/feature_cards/feature_cards.{json,md}` |
 | train | `iforest.py` | host_window rows on the training days (hash sample) + registry | `models/iforest-<ts>/{model.joblib, manifest.json}` |
 | score | `iforest.py` | host_window rows after the training days (Arrow batches) | `outputs/scores.parquet` |
+| stability | `stability.py` | host_window + registry (no truth) | `outputs/stability/stability.{json,md}` |
 | alerts | `alerts.py` | scores + lake | `outputs/top_alerts.csv` |
 | evaluate | `alerts.py` | scores + lake + truth | recall@K per attack type (log) |
 
@@ -201,7 +202,21 @@ significant digits so reruns are byte-identical; DuckDB parallel sums differ in 
 - `check_scorable` (in `score`) refuses a manifest without `score_after` (V0) or with an input the registry rates
   not usable. `evaluate` logs injected host-windows on training vs scored days (synthetic truth, after training).
 
-## Model outputs
+## Stability (V3, `netanomaly stability`, ADR-023)
+Diagnostics, not a pipeline stage: not part of `run`; trains its own in-memory models (nothing in `models/`) with the
+same split and registry inputs as `train`, scores the held-out days and compares rankings. **Never reads truth.**
+Settings `stability:` in config.yaml; K = `alert_budget_per_day`.
+- Reference = mean `anomaly_score` of `seeds` models (seeds `model.seed + i`) on `min(train_sample_rows, training
+  rows)` rows; the mean uses an ordered aggregate so reruns are byte-identical.
+- Seed stability: all pairs of those models. Sample-size curve: per size in `sample_sizes` (capped at the training rows,
+  which are always a point) `curve_seeds` models with seeds `model.seed + 1000 + j` (disjoint from the reference),
+  each against the reference. Seed changes both the hash sample and the forest.
+- Agreement: Spearman rho over all scored rows (average ranks for ties) and top-K overlap per UTC day (share of a
+  day's top-K shared; ties broken by `src_ip`, `window_start`), reported as median (min–max) and worst day.
+- Memory/cost: each model's scores go to `temp_directory/stability/<variant>.parquet` in Arrow batches (deleted
+  afterwards); ranks and pair joins run in DuckDB TEMP tables. One model = one fit + one pass over the score days
+  (~1.7 s on synthetic data; 50 models ≈ 90 s).
+
 `anomaly_score = -IsolationForest.score_samples(x)`: a ranking within a model version, not a probability.
 
 ## Model artifacts (current, development only)
