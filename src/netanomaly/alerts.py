@@ -48,7 +48,7 @@ COPY (
     return con.execute(f"SELECT count(*) FROM read_csv({sql_literal(out_csv)})").fetchone()[0]
 
 
-def _check_truth_join(con: duckdb.DuckDBPyConnection, lake: Path, truth_dir: Path) -> None:
+def check_truth_join(con: duckdb.DuckDBPyConnection, lake: Path, truth_dir: Path) -> None:
     """Every truth flow_sequence must match exactly one lake flow.
 
     flow_sequence is unique only within one synthetic `generate` run; real exporters give no such guarantee
@@ -76,7 +76,7 @@ def recall_at_k(con: duckdb.DuckDBPyConnection, scores: Path, lake: Path, truth_
     Synthetic evaluation only: injected flows are joined to the lake by flow_sequence, which the generator
     makes unique per run. Production code must not rely on flow_sequence; flow_id is the traceability key.
     """
-    _check_truth_join(con, lake, truth_dir)
+    check_truth_join(con, lake, truth_dir)
     return con.execute(f"""
 WITH truth AS (
   SELECT DISTINCT i.injection_id, m.attack_type, f.src_ip,

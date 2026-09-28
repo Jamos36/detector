@@ -16,7 +16,18 @@ from pathlib import Path
 
 import joblib
 
-from netanomaly import alerts, baselines, feature_registry, features, iforest, novelty, quality, timing
+from netanomaly import (
+    alerts,
+    baselines,
+    feature_cards,
+    feature_registry,
+    feature_report,
+    features,
+    iforest,
+    novelty,
+    quality,
+    timing,
+)
 from netanomaly.config import Paths, Settings, load_settings
 from netanomaly.db import connect
 from netanomaly.ingest import ingest_directory
@@ -128,6 +139,17 @@ def cmd_timing(args: argparse.Namespace, s: Settings) -> None:
              s.timing.min_events, out)
 
 
+def cmd_feature_cards(args: argparse.Namespace, s: Settings) -> None:
+    registry = feature_registry.load_registry()
+    report = feature_cards.build_cards(connect(s.duckdb), registry, load_contract(registry.contract), s.paths.lake,
+                                       s.paths.features, _truth_dir(s), s.window_minutes, s.feature_cards)
+    _, md_path = feature_report.write_report(report, s.paths.outputs / feature_cards.REPORT_DIR)
+    log.info("feature cards: %d analysed, %d not analysed, reference %s, evaluated on %s (synthetic diagnostics) -> %s",
+             len(report.cards), len(report.not_analysed), ",".join(map(str, report.reference_days)) or "none",
+             ",".join(map(str, report.eval_days)) or "none",
+             md_path)
+
+
 def cmd_train(args: argparse.Namespace, s: Settings) -> None:
     _, manifest, out = iforest.train(connect(s.duckdb), _host_window_dir(s), list(features.HOST_WINDOW_FEATURES),
                                      s.model, s.paths.models)
@@ -195,6 +217,8 @@ def build_parser() -> argparse.ArgumentParser:
     n = sub.add_parser("novelty", help="new-destination / new-port rates from a persistent seen set (V2-3)")
     n.add_argument("--rebuild", action="store_true", help="discard the seen set and recompute every day")
     n.set_defaults(func=cmd_novelty)
+    fc = sub.add_parser("feature-cards", help="per-feature diagnostics, synthetic AUROC -> outputs/feature_cards/ (V2-5)")
+    fc.set_defaults(func=cmd_feature_cards)
     q = sub.add_parser("dq", help="data-quality report for one ingest batch -> outputs/dq/dq_<batch>.{json,md}")
     q.add_argument("--batch", help="ingest_batch_id to report on (default: newest in the ledger)")
     q.set_defaults(func=cmd_dq)

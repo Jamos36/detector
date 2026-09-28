@@ -57,6 +57,16 @@ class TimingSettings(BaseModel):
     min_events: int = Field(default=10, ge=3)
 
 
+class FeatureCardSettings(BaseModel):
+    # Feature cards (V2-5, feature_cards.py). PSI reference period = lake days [warmup_days, warmup_days +
+    # reference_days), by position in the lake's sorted UTC days; every day is compared with it.
+    # warmup_days skips the days where prior-history features cannot be complete (baselines need 2 earlier days).
+    warmup_days: int = Field(default=2, ge=0)
+    reference_days: int = Field(default=1, ge=1)
+    psi_bins: int = Field(default=10, ge=2)  # quantile bins of the reference values, plus one NULL bin
+    redundancy_threshold: float = Field(default=0.9, gt=0, le=1)  # |Spearman rho| at or above: flagged redundant
+
+
 class ModelSettings(BaseModel):
     train_sample_rows: int = Field(default=200_000, ge=1_000)
     n_estimators: int = Field(default=200, ge=10)
@@ -72,6 +82,7 @@ class Settings(BaseModel):
     dq: DQSettings = DQSettings()
     baseline: BaselineSettings = BaselineSettings()
     timing: TimingSettings = TimingSettings()
+    feature_cards: FeatureCardSettings = FeatureCardSettings()
     model: ModelSettings = ModelSettings()
     batch_rows: int = Field(default=50_000, ge=1_000)
     window_minutes: int = Field(default=5, ge=1)

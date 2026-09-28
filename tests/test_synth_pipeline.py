@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import inspect
+import json
 import shutil
 from datetime import date
 from pathlib import Path
@@ -149,7 +150,7 @@ def test_production_modules_do_not_use_flow_sequence():
     """Ingest, features, scoring, alerting and DQ must not key on flow_sequence: its uniqueness in real exports
     is unverified. flow_id (source file hash + row number) is the traceability key."""
     src = Path(alerts.__file__).parent
-    allowed = {"synth.py", "alerts.py"}  # generator and synthetic recall@K only
+    allowed = {"synth.py", "alerts.py", "labels.py"}  # generator, synthetic recall@K and truth labels only
     offenders = [p.name for p in src.glob("*.py") if p.name not in allowed and "flow_sequence" in p.read_text("utf-8")]
     assert offenders == []
     assert "flow_sequence" not in inspect.getsource(alerts.write_top_alerts)
@@ -217,3 +218,24 @@ def test_timing_covers_every_host_window_and_finds_the_injected_beacon(synth_roo
     top_src, top_dst = con.sql(f"SELECT src_ip, timing_dst_ip FROM read_parquet('{tim}') "
                                "ORDER BY interarrival_cv NULLS LAST, src_ip, window_start LIMIT 1").fetchone()
     assert (top_src, top_dst) == (beacon["src_ip"], beacon["dst"])
+
+
+# --- feature cards (V2-5) ----------------------------------------------------
+
+def test_feature_cards_report_every_usable_feature_without_touching_features_or_model(synth_root):
+    hw, models = synth_root / "features" / "host_window", synth_root / "models"
+    before = sorted(p.read_bytes() for p in [*hw.rglob("*.parquet"), *models.rglob("*")] if p.is_file())
+    for stage in ("baselines", "novelty", "timing", "feature-cards"):
+        main(["--root", str(synth_root), stage])
+    assert sorted(p.read_bytes() for p in [*hw.rglob("*.parquet"), *models.rglob("*")] if p.is_file()) == before
+    out = synth_root / "outputs" / "feature_cards"
+    report = json.loads((out / "feature_cards.json").read_text(encoding="utf-8"))
+    names = [c["name"] for c in report["cards"]]
+    assert "syn_only_ratio" not in names and "interarrival_cv" in names and len(names) == 11
+    assert report["truth"]["matched_flows"] == report["truth"]["truth_flows"] > 0
+    assert report["eval_days"] == ["2026-09-02"] and report["reference_days"] == []  # 2 days < warm-up + reference
+    windows = {ls["attack_type"]: ls["windows"] for ls in report["labels"]}
+    assert sorted(windows) == sorted(ATTACKS)
+    for card in report["cards"]:
+        assert {a["attack_type"]: a["positives"] for a in card["auroc"] if a["attack_type"] != "any"} == windows
+    assert "SYNTHETIC DIAGNOSTICS" in (out / "feature_cards.md").read_text(encoding="utf-8")

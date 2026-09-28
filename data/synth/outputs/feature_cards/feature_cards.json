@@ -1,0 +1,2391 @@
+{
+  "banner": "SYNTHETIC DIAGNOSTICS: mock/synthetic data with attacks designed by us (ADR-012). Detection metrics are not real-world performance estimates; field meanings are unvalidated (0/42), so every feature is provisional.",
+  "registry_version": 1,
+  "window_minutes": 5,
+  "settings": {
+    "warmup_days": 2,
+    "reference_days": 1,
+    "psi_bins": 10,
+    "redundancy_threshold": 0.9
+  },
+  "days": [
+    "2026-09-01",
+    "2026-09-02",
+    "2026-09-03",
+    "2026-09-04",
+    "2026-09-05",
+    "2026-09-06"
+  ],
+  "reference_days": [
+    "2026-09-03"
+  ],
+  "eval_days": [
+    "2026-09-04",
+    "2026-09-05",
+    "2026-09-06"
+  ],
+  "rows": 222760,
+  "truth": {
+    "injections": 15,
+    "truth_flows": 3300,
+    "matched_flows": 3300,
+    "unknown_injections": 0,
+    "src_mismatches": 0,
+    "count_mismatches": 0,
+    "attack_days": [
+      "2026-09-04",
+      "2026-09-05",
+      "2026-09-06"
+    ]
+  },
+  "labels": [
+    {
+      "attack_type": "beaconing",
+      "windows": 218,
+      "injected_flows": 1080,
+      "median_purity": 1.0,
+      "min_purity": 0.25
+    },
+    {
+      "attack_type": "brute_force",
+      "windows": 9,
+      "injected_flows": 900,
+      "median_purity": 1.0,
+      "min_purity": 0.9897959184
+    },
+    {
+      "attack_type": "exfil_burst",
+      "windows": 18,
+      "injected_flows": 60,
+      "median_purity": 0.8452380952,
+      "min_purity": 0.3333333333
+    },
+    {
+      "attack_type": "horizontal_scan",
+      "windows": 9,
+      "injected_flows": 360,
+      "median_purity": 1.0,
+      "min_purity": 0.972972973
+    },
+    {
+      "attack_type": "vertical_scan",
+      "windows": 6,
+      "injected_flows": 900,
+      "median_purity": 0.9965277778,
+      "min_purity": 0.98125
+    }
+  ],
+  "cards": [
+    {
+      "name": "flows",
+      "table": "host_window",
+      "temporal_scope": "window",
+      "direction": "high",
+      "sources": [
+        "src_ip (high, unvalidated)",
+        "flow_start (high, unvalidated)"
+      ],
+      "attack_hypotheses": [
+        "T1046 Network Service Discovery",
+        "T1498 Network Denial of Service"
+      ],
+      "distribution": {
+        "rows": 222760,
+        "non_null": 222760,
+        "null_rate": 0.0,
+        "distinct": 31,
+        "zero_share": 0.0,
+        "min": 1.0,
+        "max": 160.0,
+        "mean": 1.745147244,
+        "std": 1.458648849,
+        "quantiles": {
+          "p01": 1.0,
+          "p05": 1.0,
+          "p25": 1.0,
+          "p50": 1.0,
+          "p75": 2.0,
+          "p95": 4.0,
+          "p99": 5.0
+        }
+      },
+      "top_values": [
+        {
+          "value": "1",
+          "rows": 123753,
+          "share": 0.5555440833
+        },
+        {
+          "value": "2",
+          "rows": 57032,
+          "share": 0.2560244209
+        },
+        {
+          "value": "3",
+          "rows": 26279,
+          "share": 0.1179700126
+        }
+      ],
+      "quality": [],
+      "psi": [
+        {
+          "flow_date": "2026-09-01",
+          "role": "warm-up",
+          "rows": 37151,
+          "null_rate": 0.0,
+          "psi": 4.648299965e-05,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-02",
+          "role": "warm-up",
+          "rows": 37066,
+          "null_rate": 0.0,
+          "psi": 6.222241612e-05,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-03",
+          "role": "reference",
+          "rows": 37138,
+          "null_rate": 0.0,
+          "psi": 0.0,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-04",
+          "role": "compare",
+          "rows": 36998,
+          "null_rate": 0.0,
+          "psi": 0.0003291641101,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-05",
+          "role": "compare",
+          "rows": 37125,
+          "null_rate": 0.0,
+          "psi": 7.289339253e-05,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-06",
+          "role": "compare",
+          "rows": 37282,
+          "null_rate": 0.0,
+          "psi": 9.945682787e-06,
+          "reading": "stable"
+        }
+      ],
+      "auroc": [
+        {
+          "attack_type": "any",
+          "positives": 260,
+          "negatives": 111145,
+          "positives_non_null": 260,
+          "auroc": 0.9791300346
+        },
+        {
+          "attack_type": "beaconing",
+          "positives": 218,
+          "negatives": 111145,
+          "positives_non_null": 218,
+          "auroc": 0.9857263489
+        },
+        {
+          "attack_type": "brute_force",
+          "positives": 9,
+          "negatives": 111145,
+          "positives_non_null": 9,
+          "auroc": 1.0
+        },
+        {
+          "attack_type": "exfil_burst",
+          "positives": 18,
+          "negatives": 111145,
+          "positives_non_null": 18,
+          "auroc": 0.8714147185
+        },
+        {
+          "attack_type": "horizontal_scan",
+          "positives": 9,
+          "negatives": 111145,
+          "positives_non_null": 9,
+          "auroc": 1.0
+        },
+        {
+          "attack_type": "vertical_scan",
+          "positives": 6,
+          "negatives": 111145,
+          "positives_non_null": 6,
+          "auroc": 1.0
+        }
+      ],
+      "correlations": [
+        {
+          "other": "uniq_dst_ip",
+          "rho": 0.969464782,
+          "rows": 222760
+        },
+        {
+          "other": "uniq_dst_port",
+          "rho": 0.8064449184,
+          "rows": 222760
+        },
+        {
+          "other": "packets_out",
+          "rho": 0.4795737005,
+          "rows": 222760
+        },
+        {
+          "other": "bytes_out_robust_z",
+          "rho": 0.4563171496,
+          "rows": 148543
+        },
+        {
+          "other": "bytes_out",
+          "rho": 0.4533086704,
+          "rows": 222760
+        },
+        {
+          "other": "max_flow_bytes",
+          "rho": 0.3731313597,
+          "rows": 222760
+        },
+        {
+          "other": "internal_ratio",
+          "rho": 0.08220869629,
+          "rows": 222760
+        },
+        {
+          "other": "new_dst_ip_rate",
+          "rho": 0.06659589213,
+          "rows": 222760
+        },
+        {
+          "other": "interarrival_cv",
+          "rho": -0.03292922751,
+          "rows": 14492
+        },
+        {
+          "other": "new_dst_port_rate",
+          "rho": -0.03004274589,
+          "rows": 222760
+        }
+      ]
+    },
+    {
+      "name": "bytes_out",
+      "table": "host_window",
+      "temporal_scope": "window",
+      "direction": "high",
+      "sources": [
+        "src_ip (high, unvalidated)",
+        "flow_start (high, unvalidated)",
+        "bytes (high, unvalidated)"
+      ],
+      "attack_hypotheses": [
+        "T1048 Exfiltration Over Alternative Protocol",
+        "T1041 Exfiltration Over C2 Channel"
+      ],
+      "distribution": {
+        "rows": 222760,
+        "non_null": 222760,
+        "null_rate": 0.0,
+        "distinct": 84256,
+        "zero_share": 0.0,
+        "min": 40.0,
+        "max": 230834962.0,
+        "mean": 49292.75857,
+        "std": 941579.3113,
+        "quantiles": {
+          "p01": 55.0,
+          "p05": 77.0,
+          "p25": 3307.0,
+          "p50": 15236.5,
+          "p75": 43880.0,
+          "p95": 164157.45,
+          "p99": 411709.73
+        }
+      },
+      "top_values": [
+        {
+          "value": "89.0",
+          "rows": 557,
+          "share": 0.002500448914
+        },
+        {
+          "value": "82.0",
+          "rows": 555,
+          "share": 0.002491470641
+        },
+        {
+          "value": "75.0",
+          "rows": 549,
+          "share": 0.002464535823
+        }
+      ],
+      "quality": [],
+      "psi": [
+        {
+          "flow_date": "2026-09-01",
+          "role": "warm-up",
+          "rows": 37151,
+          "null_rate": 0.0,
+          "psi": 0.000181371285,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-02",
+          "role": "warm-up",
+          "rows": 37066,
+          "null_rate": 0.0,
+          "psi": 0.0004970037078,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-03",
+          "role": "reference",
+          "rows": 37138,
+          "null_rate": 0.0,
+          "psi": 0.0,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-04",
+          "role": "compare",
+          "rows": 36998,
+          "null_rate": 0.0,
+          "psi": 0.0007491963596,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-05",
+          "role": "compare",
+          "rows": 37125,
+          "null_rate": 0.0,
+          "psi": 0.0003665856433,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-06",
+          "role": "compare",
+          "rows": 37282,
+          "null_rate": 0.0,
+          "psi": 0.0005640441606,
+          "reading": "stable"
+        }
+      ],
+      "auroc": [
+        {
+          "attack_type": "any",
+          "positives": 260,
+          "negatives": 111145,
+          "positives_non_null": 260,
+          "auroc": 0.4910388197
+        },
+        {
+          "attack_type": "beaconing",
+          "positives": 218,
+          "negatives": 111145,
+          "positives_non_null": 218,
+          "auroc": 0.4300993702
+        },
+        {
+          "attack_type": "brute_force",
+          "positives": 9,
+          "negatives": 111145,
+          "positives_non_null": 9,
+          "auroc": 0.9669870689
+        },
+        {
+          "attack_type": "exfil_burst",
+          "positives": 18,
+          "negatives": 111145,
+          "positives_non_null": 18,
+          "auroc": 0.999462164
+        },
+        {
+          "attack_type": "horizontal_scan",
+          "positives": 9,
+          "negatives": 111145,
+          "positives_non_null": 9,
+          "auroc": 0.3706034659
+        },
+        {
+          "attack_type": "vertical_scan",
+          "positives": 6,
+          "negatives": 111145,
+          "positives_non_null": 6,
+          "auroc": 0.646632777
+        }
+      ],
+      "correlations": [
+        {
+          "other": "bytes_out_robust_z",
+          "rho": 0.9927663873,
+          "rows": 148543
+        },
+        {
+          "other": "max_flow_bytes",
+          "rho": 0.9896335204,
+          "rows": 222760
+        },
+        {
+          "other": "packets_out",
+          "rho": 0.9766071835,
+          "rows": 222760
+        },
+        {
+          "other": "uniq_dst_ip",
+          "rho": 0.4676915295,
+          "rows": 222760
+        },
+        {
+          "other": "flows",
+          "rho": 0.4533086704,
+          "rows": 222760
+        },
+        {
+          "other": "uniq_dst_port",
+          "rho": 0.3568603998,
+          "rows": 222760
+        },
+        {
+          "other": "internal_ratio",
+          "rho": -0.2741846829,
+          "rows": 222760
+        },
+        {
+          "other": "new_dst_ip_rate",
+          "rho": 0.0905090024,
+          "rows": 222760
+        },
+        {
+          "other": "new_dst_port_rate",
+          "rho": -0.02041797378,
+          "rows": 222760
+        },
+        {
+          "other": "interarrival_cv",
+          "rho": 0.01824640202,
+          "rows": 14492
+        }
+      ]
+    },
+    {
+      "name": "packets_out",
+      "table": "host_window",
+      "temporal_scope": "window",
+      "direction": "high",
+      "sources": [
+        "src_ip (high, unvalidated)",
+        "flow_start (high, unvalidated)",
+        "packets (high, unvalidated)"
+      ],
+      "attack_hypotheses": [
+        "T1498 Network Denial of Service"
+      ],
+      "distribution": {
+        "rows": 222760,
+        "non_null": 222760,
+        "null_rate": 0.0,
+        "distinct": 1504,
+        "zero_share": 0.0,
+        "min": 1.0,
+        "max": 164881.0,
+        "mean": 64.83864697,
+        "std": 683.4316366,
+        "quantiles": {
+          "p01": 1.0,
+          "p05": 1.0,
+          "p25": 6.0,
+          "p50": 24.0,
+          "p75": 65.0,
+          "p95": 223.0,
+          "p99": 532.0
+        }
+      },
+      "top_values": [
+        {
+          "value": "1.0",
+          "rows": 35664,
+          "share": 0.1601005567
+        },
+        {
+          "value": "2.0",
+          "rows": 7931,
+          "share": 0.03560333992
+        },
+        {
+          "value": "3.0",
+          "rows": 4205,
+          "share": 0.0188768181
+        }
+      ],
+      "quality": [],
+      "psi": [
+        {
+          "flow_date": "2026-09-01",
+          "role": "warm-up",
+          "rows": 37151,
+          "null_rate": 0.0,
+          "psi": 0.0002648769626,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-02",
+          "role": "warm-up",
+          "rows": 37066,
+          "null_rate": 0.0,
+          "psi": 0.0004714769253,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-03",
+          "role": "reference",
+          "rows": 37138,
+          "null_rate": 0.0,
+          "psi": 0.0,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-04",
+          "role": "compare",
+          "rows": 36998,
+          "null_rate": 0.0,
+          "psi": 0.0005520716676,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-05",
+          "role": "compare",
+          "rows": 37125,
+          "null_rate": 0.0,
+          "psi": 0.0004381378188,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-06",
+          "role": "compare",
+          "rows": 37282,
+          "null_rate": 0.0,
+          "psi": 0.0004452674787,
+          "reading": "stable"
+        }
+      ],
+      "auroc": [
+        {
+          "attack_type": "any",
+          "positives": 260,
+          "negatives": 111145,
+          "positives_non_null": 260,
+          "auroc": 0.6445444274
+        },
+        {
+          "attack_type": "beaconing",
+          "positives": 218,
+          "negatives": 111145,
+          "positives_non_null": 218,
+          "auroc": 0.5874937112
+        },
+        {
+          "attack_type": "brute_force",
+          "positives": 9,
+          "negatives": 111145,
+          "positives_non_null": 9,
+          "auroc": 0.9977636821
+        },
+        {
+          "attack_type": "exfil_burst",
+          "positives": 18,
+          "negatives": 111145,
+          "positives_non_null": 18,
+          "auroc": 0.9985379459
+        },
+        {
+          "attack_type": "horizontal_scan",
+          "positives": 9,
+          "negatives": 111145,
+          "positives_non_null": 9,
+          "auroc": 0.7554770795
+        },
+        {
+          "attack_type": "vertical_scan",
+          "positives": 6,
+          "negatives": 111145,
+          "positives_non_null": 6,
+          "auroc": 0.9591787005
+        }
+      ],
+      "correlations": [
+        {
+          "other": "bytes_out",
+          "rho": 0.9766071835,
+          "rows": 222760
+        },
+        {
+          "other": "bytes_out_robust_z",
+          "rho": 0.974764805,
+          "rows": 148543
+        },
+        {
+          "other": "max_flow_bytes",
+          "rho": 0.9614859839,
+          "rows": 222760
+        },
+        {
+          "other": "uniq_dst_ip",
+          "rho": 0.4889963633,
+          "rows": 222760
+        },
+        {
+          "other": "flows",
+          "rho": 0.4795737005,
+          "rows": 222760
+        },
+        {
+          "other": "uniq_dst_port",
+          "rho": 0.3770457622,
+          "rows": 222760
+        },
+        {
+          "other": "internal_ratio",
+          "rho": -0.236924474,
+          "rows": 222760
+        },
+        {
+          "other": "new_dst_ip_rate",
+          "rho": 0.08573040118,
+          "rows": 222760
+        },
+        {
+          "other": "new_dst_port_rate",
+          "rho": -0.02152350445,
+          "rows": 222760
+        },
+        {
+          "other": "interarrival_cv",
+          "rho": 0.003665798604,
+          "rows": 14492
+        }
+      ]
+    },
+    {
+      "name": "uniq_dst_ip",
+      "table": "host_window",
+      "temporal_scope": "window",
+      "direction": "high",
+      "sources": [
+        "src_ip (high, unvalidated)",
+        "flow_start (high, unvalidated)",
+        "dst_ip (high, unvalidated)"
+      ],
+      "attack_hypotheses": [
+        "T1046 Network Service Discovery",
+        "T1018 Remote System Discovery"
+      ],
+      "distribution": {
+        "rows": 222760,
+        "non_null": 222760,
+        "null_rate": 0.0,
+        "distinct": 17,
+        "zero_share": 0.0,
+        "min": 1.0,
+        "max": 46.0,
+        "mean": 1.663696355,
+        "std": 0.9705457819,
+        "quantiles": {
+          "p01": 1.0,
+          "p05": 1.0,
+          "p25": 1.0,
+          "p50": 1.0,
+          "p75": 2.0,
+          "p95": 4.0,
+          "p99": 5.0
+        }
+      },
+      "top_values": [
+        {
+          "value": "1",
+          "rows": 127649,
+          "share": 0.5730337583
+        },
+        {
+          "value": "2",
+          "rows": 58395,
+          "share": 0.2621431137
+        },
+        {
+          "value": "3",
+          "rows": 25049,
+          "share": 0.1124483749
+        }
+      ],
+      "quality": [],
+      "psi": [
+        {
+          "flow_date": "2026-09-01",
+          "role": "warm-up",
+          "rows": 37151,
+          "null_rate": 0.0,
+          "psi": 0.0001249828573,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-02",
+          "role": "warm-up",
+          "rows": 37066,
+          "null_rate": 0.0,
+          "psi": 0.0001000066035,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-03",
+          "role": "reference",
+          "rows": 37138,
+          "null_rate": 0.0,
+          "psi": 0.0,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-04",
+          "role": "compare",
+          "rows": 36998,
+          "null_rate": 0.0,
+          "psi": 0.0002902580023,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-05",
+          "role": "compare",
+          "rows": 37125,
+          "null_rate": 0.0,
+          "psi": 5.233698118e-05,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-06",
+          "role": "compare",
+          "rows": 37282,
+          "null_rate": 0.0,
+          "psi": 7.998978205e-05,
+          "reading": "stable"
+        }
+      ],
+      "auroc": [
+        {
+          "attack_type": "any",
+          "positives": 260,
+          "negatives": 111145,
+          "positives_non_null": 260,
+          "auroc": 0.5083142776
+        },
+        {
+          "attack_type": "beaconing",
+          "positives": 218,
+          "negatives": 111145,
+          "positives_non_null": 218,
+          "auroc": 0.4880031499
+        },
+        {
+          "attack_type": "brute_force",
+          "positives": 9,
+          "negatives": 111145,
+          "positives_non_null": 9,
+          "auroc": 0.3794437697
+        },
+        {
+          "attack_type": "exfil_burst",
+          "positives": 18,
+          "negatives": 111145,
+          "positives_non_null": 18,
+          "auroc": 0.5521950805
+        },
+        {
+          "attack_type": "horizontal_scan",
+          "positives": 9,
+          "negatives": 111145,
+          "positives_non_null": 9,
+          "auroc": 1.0
+        },
+        {
+          "attack_type": "vertical_scan",
+          "positives": 6,
+          "negatives": 111145,
+          "positives_non_null": 6,
+          "auroc": 0.5704200219
+        }
+      ],
+      "correlations": [
+        {
+          "other": "flows",
+          "rho": 0.969464782,
+          "rows": 222760
+        },
+        {
+          "other": "uniq_dst_port",
+          "rho": 0.8248401739,
+          "rows": 222760
+        },
+        {
+          "other": "packets_out",
+          "rho": 0.4889963633,
+          "rows": 222760
+        },
+        {
+          "other": "bytes_out_robust_z",
+          "rho": 0.4705144501,
+          "rows": 148543
+        },
+        {
+          "other": "bytes_out",
+          "rho": 0.4676915295,
+          "rows": 222760
+        },
+        {
+          "other": "max_flow_bytes",
+          "rho": 0.3923847343,
+          "rows": 222760
+        },
+        {
+          "other": "new_dst_ip_rate",
+          "rho": 0.07762949962,
+          "rows": 222760
+        },
+        {
+          "other": "internal_ratio",
+          "rho": 0.04944410134,
+          "rows": 222760
+        },
+        {
+          "other": "new_dst_port_rate",
+          "rho": -0.02889021036,
+          "rows": 222760
+        },
+        {
+          "other": "interarrival_cv",
+          "rho": 0.02055452986,
+          "rows": 14492
+        }
+      ]
+    },
+    {
+      "name": "uniq_dst_port",
+      "table": "host_window",
+      "temporal_scope": "window",
+      "direction": "high",
+      "sources": [
+        "src_ip (high, unvalidated)",
+        "flow_start (high, unvalidated)",
+        "dst_port (high, unvalidated)"
+      ],
+      "attack_hypotheses": [
+        "T1046 Network Service Discovery"
+      ],
+      "distribution": {
+        "rows": 222760,
+        "non_null": 222760,
+        "null_rate": 0.0,
+        "distinct": 11,
+        "zero_share": 0.0,
+        "min": 1.0,
+        "max": 159.0,
+        "mean": 1.397741964,
+        "std": 0.9907469739,
+        "quantiles": {
+          "p01": 1.0,
+          "p05": 1.0,
+          "p25": 1.0,
+          "p50": 1.0,
+          "p75": 2.0,
+          "p95": 3.0,
+          "p99": 3.0
+        }
+      },
+      "top_values": [
+        {
+          "value": "1",
+          "rows": 149811,
+          "share": 0.6725219968
+        },
+        {
+          "value": "2",
+          "rows": 59225,
+          "share": 0.2658690968
+        },
+        {
+          "value": "3",
+          "rows": 12697,
+          "share": 0.05699856348
+        }
+      ],
+      "quality": [],
+      "psi": [
+        {
+          "flow_date": "2026-09-01",
+          "role": "warm-up",
+          "rows": 37151,
+          "null_rate": 0.0,
+          "psi": 0.0001962641105,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-02",
+          "role": "warm-up",
+          "rows": 37066,
+          "null_rate": 0.0,
+          "psi": 0.0001520369737,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-03",
+          "role": "reference",
+          "rows": 37138,
+          "null_rate": 0.0,
+          "psi": 0.0,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-04",
+          "role": "compare",
+          "rows": 36998,
+          "null_rate": 0.0,
+          "psi": 0.0001854077383,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-05",
+          "role": "compare",
+          "rows": 37125,
+          "null_rate": 0.0,
+          "psi": 1.363293723e-05,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-06",
+          "role": "compare",
+          "rows": 37282,
+          "null_rate": 0.0,
+          "psi": 2.79719355e-05,
+          "reading": "stable"
+        }
+      ],
+      "auroc": [
+        {
+          "attack_type": "any",
+          "positives": 260,
+          "negatives": 111145,
+          "positives_non_null": 260,
+          "auroc": 0.4654774082
+        },
+        {
+          "attack_type": "beaconing",
+          "positives": 218,
+          "negatives": 111145,
+          "positives_non_null": 218,
+          "auroc": 0.4505961301
+        },
+        {
+          "attack_type": "brute_force",
+          "positives": 9,
+          "negatives": 111145,
+          "positives_non_null": 9,
+          "auroc": 0.4404366668
+        },
+        {
+          "attack_type": "exfil_burst",
+          "positives": 18,
+          "negatives": 111145,
+          "positives_non_null": 18,
+          "auroc": 0.4665047161
+        },
+        {
+          "attack_type": "horizontal_scan",
+          "positives": 9,
+          "negatives": 111145,
+          "positives_non_null": 9,
+          "auroc": 0.4925727653
+        },
+        {
+          "attack_type": "vertical_scan",
+          "positives": 6,
+          "negatives": 111145,
+          "positives_non_null": 6,
+          "auroc": 1.0
+        }
+      ],
+      "correlations": [
+        {
+          "other": "uniq_dst_ip",
+          "rho": 0.8248401739,
+          "rows": 222760
+        },
+        {
+          "other": "flows",
+          "rho": 0.8064449184,
+          "rows": 222760
+        },
+        {
+          "other": "packets_out",
+          "rho": 0.3770457622,
+          "rows": 222760
+        },
+        {
+          "other": "bytes_out_robust_z",
+          "rho": 0.3638668546,
+          "rows": 148543
+        },
+        {
+          "other": "bytes_out",
+          "rho": 0.3568603998,
+          "rows": 222760
+        },
+        {
+          "other": "max_flow_bytes",
+          "rho": 0.3127622334,
+          "rows": 222760
+        },
+        {
+          "other": "internal_ratio",
+          "rho": 0.1746596451,
+          "rows": 222760
+        },
+        {
+          "other": "new_dst_ip_rate",
+          "rho": 0.04119645614,
+          "rows": 222760
+        },
+        {
+          "other": "interarrival_cv",
+          "rho": 0.0222450497,
+          "rows": 14492
+        },
+        {
+          "other": "new_dst_port_rate",
+          "rho": -0.01398908493,
+          "rows": 222760
+        }
+      ]
+    },
+    {
+      "name": "internal_ratio",
+      "table": "host_window",
+      "temporal_scope": "window",
+      "direction": "high",
+      "sources": [
+        "src_ip (high, unvalidated)",
+        "flow_start (high, unvalidated)",
+        "dst_ip (high, unvalidated)"
+      ],
+      "attack_hypotheses": [
+        "T1021 Remote Services"
+      ],
+      "distribution": {
+        "rows": 222760,
+        "non_null": 222760,
+        "null_rate": 0.0,
+        "distinct": 35,
+        "zero_share": 0.4491739989,
+        "min": 0.0,
+        "max": 1.0,
+        "mean": 0.420875244,
+        "std": 0.4306498206,
+        "quantiles": {
+          "p01": 0.0,
+          "p05": 0.0,
+          "p25": 0.0,
+          "p50": 0.3333333333,
+          "p75": 1.0,
+          "p95": 1.0,
+          "p99": 1.0
+        }
+      },
+      "top_values": [
+        {
+          "value": "0.0",
+          "rows": 100058,
+          "share": 0.4491739989
+        },
+        {
+          "value": "1.0",
+          "rows": 66739,
+          "share": 0.2996004669
+        },
+        {
+          "value": "0.5",
+          "rows": 29114,
+          "share": 0.130696714
+        }
+      ],
+      "quality": [],
+      "psi": [
+        {
+          "flow_date": "2026-09-01",
+          "role": "warm-up",
+          "rows": 37151,
+          "null_rate": 0.0,
+          "psi": 1.607965479e-05,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-02",
+          "role": "warm-up",
+          "rows": 37066,
+          "null_rate": 0.0,
+          "psi": 0.0001646619273,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-03",
+          "role": "reference",
+          "rows": 37138,
+          "null_rate": 0.0,
+          "psi": 0.0,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-04",
+          "role": "compare",
+          "rows": 36998,
+          "null_rate": 0.0,
+          "psi": 0.0002816045985,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-05",
+          "role": "compare",
+          "rows": 37125,
+          "null_rate": 0.0,
+          "psi": 6.202545343e-05,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-06",
+          "role": "compare",
+          "rows": 37282,
+          "null_rate": 0.0,
+          "psi": 2.772260849e-05,
+          "reading": "stable"
+        }
+      ],
+      "auroc": [
+        {
+          "attack_type": "any",
+          "positives": 260,
+          "negatives": 111145,
+          "positives_non_null": 260,
+          "auroc": 0.3152773231
+        },
+        {
+          "attack_type": "beaconing",
+          "positives": 218,
+          "negatives": 111145,
+          "positives_non_null": 218,
+          "auroc": 0.2653098832
+        },
+        {
+          "attack_type": "brute_force",
+          "positives": 9,
+          "negatives": 111145,
+          "positives_non_null": 9,
+          "auroc": 0.8330109317
+        },
+        {
+          "attack_type": "exfil_burst",
+          "positives": 18,
+          "negatives": 111145,
+          "positives_non_null": 18,
+          "auroc": 0.2663080261
+        },
+        {
+          "attack_type": "horizontal_scan",
+          "positives": 9,
+          "negatives": 111145,
+          "positives_non_null": 9,
+          "auroc": 0.799613118
+        },
+        {
+          "attack_type": "vertical_scan",
+          "positives": 6,
+          "negatives": 111145,
+          "positives_non_null": 6,
+          "auroc": 0.7745647577
+        }
+      ],
+      "correlations": [
+        {
+          "other": "max_flow_bytes",
+          "rho": -0.2776317019,
+          "rows": 222760
+        },
+        {
+          "other": "bytes_out",
+          "rho": -0.2741846829,
+          "rows": 222760
+        },
+        {
+          "other": "bytes_out_robust_z",
+          "rho": -0.2584125751,
+          "rows": 148543
+        },
+        {
+          "other": "packets_out",
+          "rho": -0.236924474,
+          "rows": 222760
+        },
+        {
+          "other": "uniq_dst_port",
+          "rho": 0.1746596451,
+          "rows": 222760
+        },
+        {
+          "other": "new_dst_ip_rate",
+          "rho": -0.1442774022,
+          "rows": 222760
+        },
+        {
+          "other": "flows",
+          "rho": 0.08220869629,
+          "rows": 222760
+        },
+        {
+          "other": "uniq_dst_ip",
+          "rho": 0.04944410134,
+          "rows": 222760
+        },
+        {
+          "other": "new_dst_port_rate",
+          "rho": 0.002189231152,
+          "rows": 222760
+        },
+        {
+          "other": "interarrival_cv",
+          "rho": 0.001984915137,
+          "rows": 14492
+        }
+      ]
+    },
+    {
+      "name": "max_flow_bytes",
+      "table": "host_window",
+      "temporal_scope": "window",
+      "direction": "high",
+      "sources": [
+        "src_ip (high, unvalidated)",
+        "flow_start (high, unvalidated)",
+        "bytes (high, unvalidated)"
+      ],
+      "attack_hypotheses": [
+        "T1048 Exfiltration Over Alternative Protocol"
+      ],
+      "distribution": {
+        "rows": 222760,
+        "non_null": 222760,
+        "null_rate": 0.0,
+        "distinct": 77153,
+        "zero_share": 0.0,
+        "min": 40.0,
+        "max": 95018333.0,
+        "mean": 40605.27175,
+        "std": 487644.8483,
+        "quantiles": {
+          "p01": 55.0,
+          "p05": 76.0,
+          "p25": 3172.75,
+          "p50": 13388.0,
+          "p75": 36329.0,
+          "p95": 139841.05,
+          "p99": 375234.9
+        }
+      },
+      "top_values": [
+        {
+          "value": "89",
+          "rows": 642,
+          "share": 0.002882025498
+        },
+        {
+          "value": "85",
+          "rows": 626,
+          "share": 0.002810199318
+        },
+        {
+          "value": "82",
+          "rows": 616,
+          "share": 0.002765307955
+        }
+      ],
+      "quality": [],
+      "psi": [
+        {
+          "flow_date": "2026-09-01",
+          "role": "warm-up",
+          "rows": 37151,
+          "null_rate": 0.0,
+          "psi": 0.0003314376059,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-02",
+          "role": "warm-up",
+          "rows": 37066,
+          "null_rate": 0.0,
+          "psi": 0.0002941484209,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-03",
+          "role": "reference",
+          "rows": 37138,
+          "null_rate": 0.0,
+          "psi": 0.0,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-04",
+          "role": "compare",
+          "rows": 36998,
+          "null_rate": 0.0,
+          "psi": 0.001058606886,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-05",
+          "role": "compare",
+          "rows": 37125,
+          "null_rate": 0.0,
+          "psi": 0.0005640754191,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-06",
+          "role": "compare",
+          "rows": 37282,
+          "null_rate": 0.0,
+          "psi": 0.0002174877632,
+          "reading": "stable"
+        }
+      ],
+      "auroc": [
+        {
+          "attack_type": "any",
+          "positives": 260,
+          "negatives": 111145,
+          "positives_non_null": 260,
+          "auroc": 0.3861589331
+        },
+        {
+          "attack_type": "beaconing",
+          "positives": 218,
+          "negatives": 111145,
+          "positives_non_null": 218,
+          "auroc": 0.3404684805
+        },
+        {
+          "attack_type": "brute_force",
+          "positives": 9,
+          "negatives": 111145,
+          "positives_non_null": 9,
+          "auroc": 0.3265853915
+        },
+        {
+          "attack_type": "exfil_burst",
+          "positives": 18,
+          "negatives": 111145,
+          "positives_non_null": 18,
+          "auroc": 0.9994336727
+        },
+        {
+          "attack_type": "horizontal_scan",
+          "positives": 9,
+          "negatives": 111145,
+          "positives_non_null": 9,
+          "auroc": 0.2901120158
+        },
+        {
+          "attack_type": "vertical_scan",
+          "positives": 6,
+          "negatives": 111145,
+          "positives_non_null": 6,
+          "auroc": 0.4398518452
+        }
+      ],
+      "correlations": [
+        {
+          "other": "bytes_out",
+          "rho": 0.9896335204,
+          "rows": 222760
+        },
+        {
+          "other": "bytes_out_robust_z",
+          "rho": 0.9816247221,
+          "rows": 148543
+        },
+        {
+          "other": "packets_out",
+          "rho": 0.9614859839,
+          "rows": 222760
+        },
+        {
+          "other": "uniq_dst_ip",
+          "rho": 0.3923847343,
+          "rows": 222760
+        },
+        {
+          "other": "flows",
+          "rho": 0.3731313597,
+          "rows": 222760
+        },
+        {
+          "other": "uniq_dst_port",
+          "rho": 0.3127622334,
+          "rows": 222760
+        },
+        {
+          "other": "internal_ratio",
+          "rho": -0.2776317019,
+          "rows": 222760
+        },
+        {
+          "other": "new_dst_ip_rate",
+          "rho": 0.08316826484,
+          "rows": 222760
+        },
+        {
+          "other": "interarrival_cv",
+          "rho": 0.02492164027,
+          "rows": 14492
+        },
+        {
+          "other": "new_dst_port_rate",
+          "rho": -0.01829156772,
+          "rows": 222760
+        }
+      ]
+    },
+    {
+      "name": "bytes_out_robust_z",
+      "table": "host_baseline",
+      "temporal_scope": "prior_history",
+      "direction": "high",
+      "sources": [
+        "src_ip (high, unvalidated)",
+        "flow_start (high, unvalidated)",
+        "bytes (high, unvalidated)",
+        "src_subnet (high, unvalidated)"
+      ],
+      "attack_hypotheses": [
+        "T1048 Exfiltration Over Alternative Protocol"
+      ],
+      "distribution": {
+        "rows": 222760,
+        "non_null": 148543,
+        "null_rate": 0.333170228,
+        "distinct": 145986,
+        "zero_share": 6.732057384e-06,
+        "min": -4.186526258,
+        "max": 5.106477743,
+        "mean": -0.3571351527,
+        "std": 1.354729741,
+        "quantiles": {
+          "p01": -3.348875094,
+          "p05": -3.014814146,
+          "p25": -0.8599775925,
+          "p50": -0.001967106597,
+          "p75": 0.5899773598,
+          "p95": 1.313440715,
+          "p99": 1.808978828
+        }
+      },
+      "top_values": [
+        {
+          "value": "NULL",
+          "rows": 74217,
+          "share": 0.333170228
+        },
+        {
+          "value": "-3.1941800373209053",
+          "rows": 5,
+          "share": 2.244568145e-05
+        },
+        {
+          "value": "-2.4477439214909325",
+          "rows": 4,
+          "share": 1.795654516e-05
+        }
+      ],
+      "quality": [
+        {
+          "value": "host",
+          "rows": 148543,
+          "share": 0.666829772
+        },
+        {
+          "value": "none",
+          "rows": 74217,
+          "share": 0.333170228
+        }
+      ],
+      "psi": [
+        {
+          "flow_date": "2026-09-01",
+          "role": "warm-up",
+          "rows": 37151,
+          "null_rate": 1.0,
+          "psi": 16.11026687,
+          "reading": "shift"
+        },
+        {
+          "flow_date": "2026-09-02",
+          "role": "warm-up",
+          "rows": 37066,
+          "null_rate": 1.0,
+          "psi": 16.11026687,
+          "reading": "shift"
+        },
+        {
+          "flow_date": "2026-09-03",
+          "role": "reference",
+          "rows": 37138,
+          "null_rate": 0.0,
+          "psi": 0.0,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-04",
+          "role": "compare",
+          "rows": 36998,
+          "null_rate": 0.0,
+          "psi": 0.0006680493463,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-05",
+          "role": "compare",
+          "rows": 37125,
+          "null_rate": 0.0,
+          "psi": 0.0006356473628,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-06",
+          "role": "compare",
+          "rows": 37282,
+          "null_rate": 0.0,
+          "psi": 0.0005687145423,
+          "reading": "stable"
+        }
+      ],
+      "auroc": [
+        {
+          "attack_type": "any",
+          "positives": 260,
+          "negatives": 111145,
+          "positives_non_null": 260,
+          "auroc": 0.4786937715
+        },
+        {
+          "attack_type": "beaconing",
+          "positives": 218,
+          "negatives": 111145,
+          "positives_non_null": 218,
+          "auroc": 0.4163075675
+        },
+        {
+          "attack_type": "brute_force",
+          "positives": 9,
+          "negatives": 111145,
+          "positives_non_null": 9,
+          "auroc": 0.9577058997
+        },
+        {
+          "attack_type": "exfil_burst",
+          "positives": 18,
+          "negatives": 111145,
+          "positives_non_null": 18,
+          "auroc": 0.99954114
+        },
+        {
+          "attack_type": "horizontal_scan",
+          "positives": 9,
+          "negatives": 111145,
+          "positives_non_null": 9,
+          "auroc": 0.3656174867
+        },
+        {
+          "attack_type": "vertical_scan",
+          "positives": 6,
+          "negatives": 111145,
+          "positives_non_null": 6,
+          "auroc": 0.6339466463
+        }
+      ],
+      "correlations": [
+        {
+          "other": "bytes_out",
+          "rho": 0.9927663873,
+          "rows": 148543
+        },
+        {
+          "other": "max_flow_bytes",
+          "rho": 0.9816247221,
+          "rows": 148543
+        },
+        {
+          "other": "packets_out",
+          "rho": 0.974764805,
+          "rows": 148543
+        },
+        {
+          "other": "uniq_dst_ip",
+          "rho": 0.4705144501,
+          "rows": 148543
+        },
+        {
+          "other": "flows",
+          "rho": 0.4563171496,
+          "rows": 148543
+        },
+        {
+          "other": "uniq_dst_port",
+          "rho": 0.3638668546,
+          "rows": 148543
+        },
+        {
+          "other": "internal_ratio",
+          "rho": -0.2584125751,
+          "rows": 148543
+        },
+        {
+          "other": "new_dst_ip_rate",
+          "rho": 0.08917187285,
+          "rows": 148543
+        },
+        {
+          "other": "interarrival_cv",
+          "rho": 0.01655831612,
+          "rows": 9732
+        },
+        {
+          "other": "new_dst_port_rate",
+          "rho": 0.006608087295,
+          "rows": 148543
+        }
+      ]
+    },
+    {
+      "name": "new_dst_ip_rate",
+      "table": "host_novelty",
+      "temporal_scope": "prior_history",
+      "direction": "high",
+      "sources": [
+        "src_ip (high, unvalidated)",
+        "flow_start (high, unvalidated)",
+        "dst_ip (high, unvalidated)"
+      ],
+      "attack_hypotheses": [
+        "T1021 Remote Services",
+        "T1018 Remote System Discovery"
+      ],
+      "distribution": {
+        "rows": 222760,
+        "non_null": 222760,
+        "null_rate": 0.0,
+        "distinct": 22,
+        "zero_share": 0.9185895134,
+        "min": 0.0,
+        "max": 1.0,
+        "mean": 0.05620251855,
+        "std": 0.2082669141,
+        "quantiles": {
+          "p01": 0.0,
+          "p05": 0.0,
+          "p25": 0.0,
+          "p50": 0.0,
+          "p75": 0.0,
+          "p95": 0.5,
+          "p99": 1.0
+        }
+      },
+      "top_values": [
+        {
+          "value": "0.0",
+          "rows": 204625,
+          "share": 0.9185895134
+        },
+        {
+          "value": "1.0",
+          "rows": 8659,
+          "share": 0.03887143114
+        },
+        {
+          "value": "0.5",
+          "rows": 4616,
+          "share": 0.02072185312
+        }
+      ],
+      "quality": [
+        {
+          "value": "has_history",
+          "rows": 222460,
+          "share": 0.9986532591
+        },
+        {
+          "value": "host_first_window",
+          "rows": 300,
+          "share": 0.001346740887
+        }
+      ],
+      "psi": [
+        {
+          "flow_date": "2026-09-01",
+          "role": "warm-up",
+          "rows": 37151,
+          "null_rate": 0.0,
+          "psi": 0.4160882385,
+          "reading": "shift"
+        },
+        {
+          "flow_date": "2026-09-02",
+          "role": "warm-up",
+          "rows": 37066,
+          "null_rate": 0.0,
+          "psi": 0.00029265693,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-03",
+          "role": "reference",
+          "rows": 37138,
+          "null_rate": 0.0,
+          "psi": 0.0,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-04",
+          "role": "compare",
+          "rows": 36998,
+          "null_rate": 0.0,
+          "psi": 0.000194892717,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-05",
+          "role": "compare",
+          "rows": 37125,
+          "null_rate": 0.0,
+          "psi": 0.0001214651244,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-06",
+          "role": "compare",
+          "rows": 37282,
+          "null_rate": 0.0,
+          "psi": 0.0002077774515,
+          "reading": "stable"
+        }
+      ],
+      "auroc": [
+        {
+          "attack_type": "any",
+          "positives": 260,
+          "negatives": 111145,
+          "positives_non_null": 260,
+          "auroc": 0.5187483606
+        },
+        {
+          "attack_type": "beaconing",
+          "positives": 218,
+          "negatives": 111145,
+          "positives_non_null": 218,
+          "auroc": 0.4895299181
+        },
+        {
+          "attack_type": "brute_force",
+          "positives": 9,
+          "negatives": 111145,
+          "positives_non_null": 9,
+          "auroc": 0.4780107067
+        },
+        {
+          "attack_type": "exfil_burst",
+          "positives": 18,
+          "negatives": 111145,
+          "positives_non_null": 18,
+          "auroc": 0.5893155088
+        },
+        {
+          "attack_type": "horizontal_scan",
+          "positives": 9,
+          "negatives": 111145,
+          "positives_non_null": 9,
+          "auroc": 0.9881946006
+        },
+        {
+          "attack_type": "vertical_scan",
+          "positives": 6,
+          "negatives": 111145,
+          "positives_non_null": 6,
+          "auroc": 0.7255874458
+        }
+      ],
+      "correlations": [
+        {
+          "other": "new_dst_port_rate",
+          "rho": 0.243771828,
+          "rows": 222760
+        },
+        {
+          "other": "internal_ratio",
+          "rho": -0.1442774022,
+          "rows": 222760
+        },
+        {
+          "other": "bytes_out",
+          "rho": 0.0905090024,
+          "rows": 222760
+        },
+        {
+          "other": "bytes_out_robust_z",
+          "rho": 0.08917187285,
+          "rows": 148543
+        },
+        {
+          "other": "packets_out",
+          "rho": 0.08573040118,
+          "rows": 222760
+        },
+        {
+          "other": "max_flow_bytes",
+          "rho": 0.08316826484,
+          "rows": 222760
+        },
+        {
+          "other": "uniq_dst_ip",
+          "rho": 0.07762949962,
+          "rows": 222760
+        },
+        {
+          "other": "flows",
+          "rho": 0.06659589213,
+          "rows": 222760
+        },
+        {
+          "other": "uniq_dst_port",
+          "rho": 0.04119645614,
+          "rows": 222760
+        },
+        {
+          "other": "interarrival_cv",
+          "rho": 0.02167589398,
+          "rows": 14492
+        }
+      ]
+    },
+    {
+      "name": "new_dst_port_rate",
+      "table": "host_novelty",
+      "temporal_scope": "prior_history",
+      "direction": "high",
+      "sources": [
+        "src_ip (high, unvalidated)",
+        "flow_start (high, unvalidated)",
+        "dst_port (high, unvalidated)"
+      ],
+      "attack_hypotheses": [
+        "T1046 Network Service Discovery"
+      ],
+      "distribution": {
+        "rows": 222760,
+        "non_null": 222760,
+        "null_rate": 0.0,
+        "distinct": 10,
+        "zero_share": 0.9936119591,
+        "min": 0.0,
+        "max": 1.0,
+        "mean": 0.005688739784,
+        "std": 0.07314733141,
+        "quantiles": {
+          "p01": 0.0,
+          "p05": 0.0,
+          "p25": 0.0,
+          "p50": 0.0,
+          "p75": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        }
+      },
+      "top_values": [
+        {
+          "value": "0.0",
+          "rows": 221337,
+          "share": 0.9936119591
+        },
+        {
+          "value": "1.0",
+          "rows": 1136,
+          "share": 0.005099658826
+        },
+        {
+          "value": "0.5",
+          "rows": 201,
+          "share": 0.0009023163943
+        }
+      ],
+      "quality": [
+        {
+          "value": "has_history",
+          "rows": 222460,
+          "share": 0.9986532591
+        },
+        {
+          "value": "host_first_window",
+          "rows": 300,
+          "share": 0.001346740887
+        }
+      ],
+      "psi": [
+        {
+          "flow_date": "2026-09-01",
+          "role": "warm-up",
+          "rows": 37151,
+          "null_rate": 0.0,
+          "psi": 0.2260876617,
+          "reading": "moderate"
+        },
+        {
+          "flow_date": "2026-09-02",
+          "role": "warm-up",
+          "rows": 37066,
+          "null_rate": 0.0,
+          "psi": 1.046292436e-05,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-03",
+          "role": "reference",
+          "rows": 37138,
+          "null_rate": 0.0,
+          "psi": 0.0,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-04",
+          "role": "compare",
+          "rows": 36998,
+          "null_rate": 0.0,
+          "psi": 6.575119062e-09,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-05",
+          "role": "compare",
+          "rows": 37125,
+          "null_rate": 0.0,
+          "psi": 6.530209774e-09,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-06",
+          "role": "compare",
+          "rows": 37282,
+          "null_rate": 0.0,
+          "psi": 6.475325125e-09,
+          "reading": "stable"
+        }
+      ],
+      "auroc": [
+        {
+          "attack_type": "any",
+          "positives": 260,
+          "negatives": 111145,
+          "positives_non_null": 260,
+          "auroc": 0.5173076923
+        },
+        {
+          "attack_type": "beaconing",
+          "positives": 218,
+          "negatives": 111145,
+          "positives_non_null": 218,
+          "auroc": 0.5
+        },
+        {
+          "attack_type": "brute_force",
+          "positives": 9,
+          "negatives": 111145,
+          "positives_non_null": 9,
+          "auroc": 0.6666666667
+        },
+        {
+          "attack_type": "exfil_burst",
+          "positives": 18,
+          "negatives": 111145,
+          "positives_non_null": 18,
+          "auroc": 0.5
+        },
+        {
+          "attack_type": "horizontal_scan",
+          "positives": 9,
+          "negatives": 111145,
+          "positives_non_null": 9,
+          "auroc": 0.5
+        },
+        {
+          "attack_type": "vertical_scan",
+          "positives": 6,
+          "negatives": 111145,
+          "positives_non_null": 6,
+          "auroc": 1.0
+        }
+      ],
+      "correlations": [
+        {
+          "other": "new_dst_ip_rate",
+          "rho": 0.243771828,
+          "rows": 222760
+        },
+        {
+          "other": "flows",
+          "rho": -0.03004274589,
+          "rows": 222760
+        },
+        {
+          "other": "uniq_dst_ip",
+          "rho": -0.02889021036,
+          "rows": 222760
+        },
+        {
+          "other": "packets_out",
+          "rho": -0.02152350445,
+          "rows": 222760
+        },
+        {
+          "other": "bytes_out",
+          "rho": -0.02041797378,
+          "rows": 222760
+        },
+        {
+          "other": "max_flow_bytes",
+          "rho": -0.01829156772,
+          "rows": 222760
+        },
+        {
+          "other": "interarrival_cv",
+          "rho": 0.01537462836,
+          "rows": 14492
+        },
+        {
+          "other": "uniq_dst_port",
+          "rho": -0.01398908493,
+          "rows": 222760
+        },
+        {
+          "other": "bytes_out_robust_z",
+          "rho": 0.006608087295,
+          "rows": 148543
+        },
+        {
+          "other": "internal_ratio",
+          "rho": 0.002189231152,
+          "rows": 222760
+        }
+      ]
+    },
+    {
+      "name": "interarrival_cv",
+      "table": "host_timing",
+      "temporal_scope": "prior_history",
+      "direction": "low",
+      "sources": [
+        "src_ip (high, unvalidated)",
+        "dst_ip (high, unvalidated)",
+        "flow_start (high, unvalidated)"
+      ],
+      "attack_hypotheses": [
+        "T1071 Application Layer Protocol",
+        "T1029 Scheduled Transfer"
+      ],
+      "distribution": {
+        "rows": 222760,
+        "non_null": 14492,
+        "null_rate": 0.9349434369,
+        "distinct": 8270,
+        "zero_share": 0.0,
+        "min": 0.03896353031,
+        "max": 14.28372228,
+        "mean": 0.8592398192,
+        "std": 0.3144741803,
+        "quantiles": {
+          "p01": 0.05831333123,
+          "p05": 0.5195839547,
+          "p25": 0.7024317227,
+          "p50": 0.84413651,
+          "p75": 0.992707803,
+          "p95": 1.27954637,
+          "p99": 1.542235144
+        }
+      },
+      "top_values": [
+        {
+          "value": "NULL",
+          "rows": 208268,
+          "share": 0.9349434369
+        },
+        {
+          "value": "0.9940766370226137",
+          "rows": 18,
+          "share": 8.080445322e-05
+        },
+        {
+          "value": "1.0172282408967521",
+          "rows": 18,
+          "share": 8.080445322e-05
+        }
+      ],
+      "quality": [
+        {
+          "value": "insufficient",
+          "rows": 207476,
+          "share": 0.9313880409
+        },
+        {
+          "value": "ok",
+          "rows": 14492,
+          "share": 0.06505656312
+        },
+        {
+          "value": "none",
+          "rows": 792,
+          "share": 0.003555395942
+        }
+      ],
+      "psi": [
+        {
+          "flow_date": "2026-09-01",
+          "role": "warm-up",
+          "rows": 37151,
+          "null_rate": 0.9361524589,
+          "psi": 0.001503626199,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-02",
+          "role": "warm-up",
+          "rows": 37066,
+          "null_rate": 0.9355743808,
+          "psi": 0.001393013162,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-03",
+          "role": "reference",
+          "rows": 37138,
+          "null_rate": 0.9335182293,
+          "psi": 0.0,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-04",
+          "role": "compare",
+          "rows": 36998,
+          "null_rate": 0.9289150765,
+          "psi": 0.002973934827,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-05",
+          "role": "compare",
+          "rows": 37125,
+          "null_rate": 0.9319057239,
+          "psi": 0.001603803233,
+          "reading": "stable"
+        },
+        {
+          "flow_date": "2026-09-06",
+          "role": "compare",
+          "rows": 37282,
+          "null_rate": 0.9435384368,
+          "psi": 0.003194935595,
+          "reading": "stable"
+        }
+      ],
+      "auroc": [
+        {
+          "attack_type": "any",
+          "positives": 260,
+          "negatives": 111145,
+          "positives_non_null": 228,
+          "auroc": 0.9312113767
+        },
+        {
+          "attack_type": "beaconing",
+          "positives": 218,
+          "negatives": 111145,
+          "positives_non_null": 211,
+          "auroc": 0.9828668724
+        },
+        {
+          "attack_type": "brute_force",
+          "positives": 9,
+          "negatives": 111145,
+          "positives_non_null": 6,
+          "auroc": 0.789977057
+        },
+        {
+          "attack_type": "exfil_burst",
+          "positives": 18,
+          "negatives": 111145,
+          "positives_non_null": 7,
+          "auroc": 0.6559189447
+        },
+        {
+          "attack_type": "horizontal_scan",
+          "positives": 9,
+          "negatives": 111145,
+          "positives_non_null": 0,
+          "auroc": 0.4683521526
+        },
+        {
+          "attack_type": "vertical_scan",
+          "positives": 6,
+          "negatives": 111145,
+          "positives_non_null": 4,
+          "auroc": 0.7864126441
+        }
+      ],
+      "correlations": [
+        {
+          "other": "flows",
+          "rho": -0.03292922751,
+          "rows": 14492
+        },
+        {
+          "other": "max_flow_bytes",
+          "rho": 0.02492164027,
+          "rows": 14492
+        },
+        {
+          "other": "uniq_dst_port",
+          "rho": 0.0222450497,
+          "rows": 14492
+        },
+        {
+          "other": "new_dst_ip_rate",
+          "rho": 0.02167589398,
+          "rows": 14492
+        },
+        {
+          "other": "uniq_dst_ip",
+          "rho": 0.02055452986,
+          "rows": 14492
+        },
+        {
+          "other": "bytes_out",
+          "rho": 0.01824640202,
+          "rows": 14492
+        },
+        {
+          "other": "bytes_out_robust_z",
+          "rho": 0.01655831612,
+          "rows": 9732
+        },
+        {
+          "other": "new_dst_port_rate",
+          "rho": 0.01537462836,
+          "rows": 14492
+        },
+        {
+          "other": "packets_out",
+          "rho": 0.003665798604,
+          "rows": 14492
+        },
+        {
+          "other": "internal_ratio",
+          "rho": 0.001984915137,
+          "rows": 14492
+        }
+      ]
+    }
+  ],
+  "not_analysed": [
+    {
+      "name": "syn_only_ratio",
+      "status": "implemented",
+      "reason": "not usable: tcp_flags: confidence low"
+    },
+    {
+      "name": "rst_ratio",
+      "status": "implemented",
+      "reason": "not usable: tcp_flags: confidence low"
+    },
+    {
+      "name": "bytes_per_packet",
+      "status": "candidate",
+      "reason": "usable candidate, not implemented (unscheduled)"
+    },
+    {
+      "name": "flow_duration",
+      "status": "candidate",
+      "reason": "usable candidate, not implemented (unscheduled)"
+    },
+    {
+      "name": "icmp_echo_ratio",
+      "status": "candidate",
+      "reason": "usable candidate, not implemented (unscheduled)"
+    },
+    {
+      "name": "dns_flow_ratio",
+      "status": "candidate",
+      "reason": "usable candidate, not implemented (unscheduled)"
+    },
+    {
+      "name": "active_timeout_ratio",
+      "status": "candidate",
+      "reason": "usable candidate, not implemented (unscheduled)"
+    },
+    {
+      "name": "mean_packet_length",
+      "status": "candidate",
+      "reason": "not usable: packet_length: confidence low; packet_length: model_use exclude"
+    }
+  ],
+  "redundant_pairs": [
+    [
+      "bytes_out",
+      "bytes_out_robust_z",
+      0.9927663873
+    ],
+    [
+      "bytes_out",
+      "max_flow_bytes",
+      0.9896335204
+    ],
+    [
+      "bytes_out",
+      "packets_out",
+      0.9766071835
+    ],
+    [
+      "flows",
+      "uniq_dst_ip",
+      0.969464782
+    ],
+    [
+      "max_flow_bytes",
+      "bytes_out_robust_z",
+      0.9816247221
+    ],
+    [
+      "packets_out",
+      "bytes_out_robust_z",
+      0.974764805
+    ],
+    [
+      "packets_out",
+      "max_flow_bytes",
+      0.9614859839
+    ]
+  ]
+}

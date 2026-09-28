@@ -20,6 +20,7 @@ Python 3.13 (uv), DuckDB, Parquet/PyArrow, scikit-learn, pydantic, pytest. CPU o
 | baselines | `baselines.py` | lake (`src_ip`, `flow_start`, `bytes`, `src_subnet`) | `features/host_baseline/flow_date=…/part-0.parquet` |
 | novelty | `novelty.py` | lake (`src_ip`, `flow_start`, `dst_ip`, `dst_port`) + seen set | `features/host_novelty/flow_date=…/part-0.parquet`, `features/novelty_state/` |
 | timing | `timing.py` | lake (`src_ip`, `dst_ip`, `flow_start`) | `features/host_timing/flow_date=…/part-0.parquet` |
+| feature-cards | `feature_cards.py`, `feature_report.py`, `labels.py` | features (all four tables) + lake + truth (if present) | `outputs/feature_cards/feature_cards.{json,md}` |
 | train | `iforest.py` | features (reservoir sample) | `models/iforest-<ts>/{model.joblib, manifest.json}` |
 | score | `iforest.py` | features (Arrow batches) | `outputs/scores.parquet` |
 | alerts | `alerts.py` | scores + lake | `outputs/top_alerts.csv` |
@@ -156,6 +157,31 @@ Not part of `run` and not a model input yet (V0 model unchanged). Settings `timi
 - Memory: one lake pass writes a slim event table (distinct `src_ip, dst_ip, flow_start` + previous instant of the
   pair; `temp_directory/timing_events`, deleted afterwards), then one query per day over that day and the day before.
   Output is staged and swapped in when every day succeeded; every run recomputes all days (no incremental state).
+
+## Feature cards (V2-5, `netanomaly feature-cards`, ADR-021)
+Diagnostics, not a pipeline stage: not part of `run`, never an input to features, the model or alerts. Settings
+`feature_cards:` in config.yaml. Output `outputs/feature_cards/feature_cards.{json,md}` (JSON floats rounded to 10
+significant digits so reruns are byte-identical; DuckDB parallel sums differ in the last digits).
+- Scope: registry features that are usable (computed eligibility) and implemented; `FEATURE_SOURCES` maps each to its
+  table, pre-declared anomalous direction and quality column. Usable candidates and not-usable features are listed as
+  not analysed with the reason. A usable implemented feature without a source entry is refused.
+- Rows: TEMP TABLE `card_rows` = the `host_window` grid LEFT JOIN `host_baseline`, `host_novelty`, `host_timing` on
+  (`src_ip`, `window_start`) plus labels; each table must cover exactly the grid (else refuse: stale features).
+- Statistics (DuckDB aggregates only; Python gets aggregates): distribution (quantiles, mean, std, zero share),
+  missingness (NULL share overall/per day, quality-level counts), cardinality (distinct, top 3 values), Spearman rho
+  per pair over pairwise-complete rows (columns with NULLs re-ranked per pair), PSI per day, AUROC per attack type.
+- PSI: reference = lake days [`warmup_days`, `warmup_days + reference_days`) by position (default day index 2, i.e.
+  the first day with host baselines); edges = distinct `psi_bins`-quantiles of the reference (right-closed) + a NULL
+  bin; shares floored at 1e-4.
+- Labels (`labels.py`, synthetic evaluation only): `verify_truth` first checks the truth maps onto the lake — every
+  truth `flow_sequence` matches exactly one lake flow (`alerts.check_truth_join`), every truth flow names a known
+  injection, lake `src_ip` equals the injection's `src_ip`, and each injection's matched flow count equals `n_flows`.
+  Host-window label: the window contains ≥ 1 injected flow of that type; negative only with no injected flow.
+  Flow-level label: the flow itself is in the truth (no flow-level feature is implemented, so none is scored).
+- AUROC: population = host-windows on days with injected flows; per type: its windows vs clean windows (other
+  attacks excluded); Mann-Whitney with ties 1/2, NULL lowest, score oriented by the declared direction.
+- Without truth files (mock data) the cards are produced without AUROC; with a lake too short for the reference,
+  without PSI.
 
 ## Model outputs
 `anomaly_score = -IsolationForest.score_samples(x)`: a ranking within a model version, not a probability.

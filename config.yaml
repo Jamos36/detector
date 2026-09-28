@@ -34,6 +34,12 @@ timing:                      # timing regularity (netanomaly timing, V2-4)
   history_hours: 2           # a window starting at W uses flows in [W - 2 h, W); never W itself or later
   min_events: 10             # a (host, destination) series needs >= 10 distinct flow_start instants (9 gaps)
 
+feature_cards:               # per-feature diagnostics (netanomaly feature-cards, V2-5)
+  warmup_days: 2             # PSI reference = lake days [2, 2 + reference_days) by position: skips baseline warm-up
+  reference_days: 1
+  psi_bins: 10               # reference-quantile bins + one NULL bin
+  redundancy_threshold: 0.9  # |Spearman rho| >= 0.9 between two features is flagged as redundant
+
 batch_rows: 50000          # rows per Arrow batch when scoring
 window_minutes: 5
 alert_budget_per_day: 100  # top-K host-windows per day, not a severity threshold

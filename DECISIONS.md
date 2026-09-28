@@ -198,3 +198,31 @@ legitimate polling (NTP, updates, monitoring) are also regular. Every run recomp
 Revisit when: V2-5 feature cards show CV is dominated by legitimate periodic services, beacons with longer periods or
 heavy jitter matter, or collector documentation shows `flow_start` is not the flow's first packet time.
 
+## ADR-021: Feature cards — positional PSI reference, window-containment labels, a-priori direction
+Decision (V2-5): `netanomaly feature-cards` reports, for every registry feature that is usable and implemented,
+distribution, missingness (with the structural reason from its quality column), cardinality, Spearman redundancy,
+PSI per day and single-feature AUROC per injected attack type, to `outputs/feature_cards/feature_cards.{json,md}`.
+Every other registry feature is listed as not analysed with the reason (not usable, or candidate not implemented).
+- PSI reference = lake days [`warmup_days`, `warmup_days + reference_days`) by position (default: day index 2, the
+  first day with host baselines, 1 day). Bins = distinct reference deciles + a NULL bin, shares floored at 1e-4.
+- Labels: the truth is verified against the lake first (one-to-one `flow_sequence` match, known injection ids,
+  consistent `src_ip`, per-injection counts). A host-window is positive for attack A if it contains ≥ 1 injected
+  flow of A, negative only if it contains none. A flow-level feature would be labelled by the flow itself.
+- AUROC population = host-windows on days with injected flows; per type, other attack types are left out of the
+  negatives. The anomalous end of each feature is declared in code before looking at labels; NULL ranks lowest.
+- All detection numbers are labelled synthetic diagnostics, never real-world performance estimates (ADR-012).
+Reason: a positional reference needs no labels, so the same rule works on unlabelled real data, and skipping the
+warm-up keeps the prior-history features' start-up NULLs from being read as drift (they still show as warm-up PSI).
+Containment is the only window label that follows directly from flow truth without a tuning constant; excluding
+other attacks keeps one attack's windows from counting as another's false positives. Choosing the direction from the
+labels (max(AUC, 1 − AUC)) would overstate separation; an AUROC below 0.5 is itself a finding. Restricting to
+attack days keeps day-level effects (novelty warm-up on day 1) out of the comparison. The NULL bin makes a change in
+coverage visible as instability.
+Rejected: label-fitted direction; negatives from all days; a reference picked from known-clean days (uses labels);
+lag-shifted labels for prior-history features (a constant per feature with no evidence, and it would hide the lag
+the cards should show); sampling for correlations (exact ranks are cheap at this size).
+Consequences: prior-history features are penalised for lag (timing: windows before 10 events and up to 2 h after a
+beacon); `any` is dominated by the attack with the most windows (beaconing, 218 of 260); PSI on clean synthetic days
+is near 0 by construction and says little about real drift; per-type AUROCs rest on 6–18 windows except beaconing.
+Revisit when: V4 evaluates recall@K under alert budgets, real data needs a rolling or seasonal reference, or a
+flow-level feature is implemented.

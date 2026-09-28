@@ -1,6 +1,13 @@
 # Changelog
 
 ## Unreleased
+- feat (V2-5): feature cards `netanomaly feature-cards` → `outputs/feature_cards/feature_cards.{json,md}` (ADR-021).
+  For the 11 usable implemented registry features: distribution, missingness with quality levels, cardinality,
+  Spearman redundancy, PSI per day against a positional reference (day index 2), single-feature AUROC per injected
+  attack type. Truth-to-lake mapping verified first (`labels.py`); host-window label = window contains an injected
+  flow. Unimplemented candidates and not-usable features listed as not analysed. All detection numbers labelled
+  synthetic diagnostics. Not part of `run`; V0 features and model unchanged. `alerts._check_truth_join` is now public
+  (`check_truth_join`), reused by `labels.verify_truth`.
 - feat (V2-4): timing regularity `netanomaly timing` → `features/host_timing/` (ADR-020). `interarrival_cv` = minimum,
   over the host's (`src_ip`, `dst_ip`) series with ≥ 10 distinct `flow_start` instants in the 2 h before the window
   (config `timing:`), of the CV of consecutive gaps; the window's own flows and anything later never count. Tied
