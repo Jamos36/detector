@@ -27,13 +27,16 @@ Cannot be done in this mock/synthetic repo (ADR-012); must be completed before a
 - [x] V2-5 Feature cards: distribution, missingness, cardinality, redundancy, PSI stability, single-feature AUROC on
       injections — ADR-021, `feature_cards.py`, `netanomaly feature-cards` (synthetic diagnostics only).
 
-## V3 — Isolation Forest
-- [ ] Time-based train/score split (fix V0 leakage); sample-size stability curve; seed stability.
-- [ ] Train only on registry-usable features: drop or replace V0 `syn_only_ratio` / `rst_ratio`
-      (`tcp_flags`, confidence low; ADR-017) and have the pipeline read the feature set from the registry.
+## V3 — Isolation Forest (implementation complete on mock/synthetic data)
+- [x] Time-based train/score split (fix V0 leakage) — ADR-022; sample-size stability curve and seed stability —
+      ADR-023, `stability.py`, `netanomaly stability`.
+- [x] Train only on registry-usable features: V0 `syn_only_ratio` / `rst_ratio` dropped (`tcp_flags`, confidence
+      low; ADR-017); the model reads its feature set and log1p set from the registry (`iforest.model_features`).
 
 ## V4 — Evaluation
 - [ ] Attack intensity sweeps; recall@K 50/100/500; robust-z and rule baselines; top-K Jaccard across seeds.
+- [ ] Prior-history features as model inputs? Needs a NULL policy (`interarrival_cv` 93.5% NULL) and evaluation.
+- [ ] Tie-break in `alerts.write_top_alerts` ranking (equal scores at the K boundary).
 
 ## V5 — Analyst output
 - [ ] Incidents (merge adjacent windows), anomalies.csv + anomaly_flows.csv, report.md/.docx, charts, verdict field.

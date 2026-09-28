@@ -1,11 +1,13 @@
 # Project Status
 
-_Last updated: 2026-09-27_
+_Last updated: 2026-09-28_
 
 ## Current milestone
 V0 — Prototype: **complete**. V1 — Ingestion and Data Quality: **implementation complete** (V1-1 … V1-5
 implemented and tested on mock/synthetic data). **Real-exporter semantic validation: pending** — an external
-prerequisite for real-data use, not a V1 task (see below). V2 — Feature research: **implementation complete** (V2-1 … V2-5 done on mock/synthetic data). V3 not started.
+prerequisite for real-data use, not a V1 task (see below). V2 — Feature research: **implementation complete** (V2-1 … V2-5 done on mock/synthetic data). V3 — Isolation
+Forest: **implementation complete** (V3-1 time split + registry inputs, V3-2 stability; mock/synthetic data only).
+V4 not started.
 
 ## Real-data onboarding — external prerequisite (pending)
 - Exporter/collector documentation is needed to validate field meanings before any real-data use. It cannot be
@@ -15,10 +17,11 @@ prerequisite for real-data use, not a V1 task (see below). V2 — Feature resear
   uniqueness (ADR-016); promoting DQ checks to reject rules (ADR-011); re-deriving the 5% reject budget and thresholds.
 
 ## Deployment goal and data boundary (ADR-012, ADR-013, ADR-014)
-- **Everything in this repo is development/demonstration only**: mock and synthetic data, the two committed models
-  (`data/models/iforest-20260927T191305Z`, mock; `data/synth/models/iforest-20260927T191244Z`, synthetic; both V0,
-  trained on all 6 days incl. attack days), scores, alerts, DQ reports and recall numbers. None of it represents
-  real company data.
+- **Everything in this repo is development/demonstration only**: mock and synthetic data, the committed models
+  (V0: `data/models/iforest-20260927T191305Z`, mock, and `data/synth/models/iforest-20260927T191244Z`, synthetic —
+  both trained on all 6 days incl. attack days, kept for reference, refused by V3 `score`; V3:
+  `data/synth/models/iforest-20260928T055319Z`, synthetic, trained on 2026-09-01..03 only), scores, alerts, DQ and
+  stability reports and recall numbers. None of it represents real company data.
 - The workflow moves to a separate company environment and is trained/evaluated there on real data. Do not copy
   mock/synthetic data or these models there as production artifacts.
 - Goal: a tool a company LLM agent can invoke; the LLM orchestrates and presents, the model scores. Results stay
@@ -33,6 +36,38 @@ prerequisite for real-data use, not a V1 task (see below). V2 — Feature resear
 - Which existing tools/skills the agent combines it with, and how results are returned (files vs structured data).
 - Where outputs and reject/DQ tables live, retention, and who may see raw flow values (IPs) through the agent.
 - Real-data prerequisites: collector documentation to validate contract fields; re-deriving thresholds.
+
+## Completed (V3)
+Synthetic results below are diagnostics on self-designed data, **not real-world performance** (ADR-012).
+- V3-1 time-based split + registry inputs (ADR-022): `iforest.time_split` = first floor(n_days × `split.train_fraction`
+  0.5) UTC days of `host_window` train, only later days are scored; rows are filtered by date **before** a per-row
+  hash sample (`hash(src_ip, window_start, seed)`), so later rows, file or thread order cannot change the model. The
+  forest is the only learned step (log1p / NaN→0 are stateless). Inputs from the registry (`iforest.model_features`:
+  usable, implemented, host_window, window scope): `flows, bytes_out, packets_out, uniq_dst_ip, uniq_dst_port,
+  internal_ratio, max_flow_bytes` — V0's `syn_only_ratio` / `rst_ratio` (`tcp_flags`, confidence low) dropped, the
+  prior-history features not used yet. Manifest adds `train_dates`, `score_after`, `train_fraction`,
+  `train_period_rows`, `registry_version`, `duckdb_version`. V0 model + its scores/alerts preserved
+  (`data/synth/outputs/v0/`); V0 manifests load but `score` refuses them (no split, not-usable inputs).
+  **Synthetic run** (`data/synth`, committed): train 2026-09-01..03 (111,355 rows, all used; 0 injected windows —
+  held-out check in `evaluate`), score 2026-09-04..06 (111,405 rows, 260 injected windows), 300 alerts. The split
+  coincides with the generator's 3 clean days; the rule is positional and did not use labels, but real training days
+  will not be known clean. recall@50/100: beaconing 0/3, brute force 3/3 (best rank 37), exfil 3/3 (21), horizontal
+  3/3 (10), vertical 3/3 (12); @500 beaconing 2/3 (126). V0 @100: beaconing 1/3 (rank 96), others 3/3 at ranks 1–38.
+  Ablation (scratch, not committed): V3 split with the 9 V0 features → beaconing 0/3, scans/brute force ranks 1–7,
+  exfil 35 — the lost beacon is due to the split (V0 had trained on attack days), the rank drop of scans/brute force
+  to dropping the `tcp_flags` features. Top 4 per day are busy benign-looking windows (5–8 flows, 0.4–1.4 MB), not
+  injections. Mock lake (scratch copy): 29,999 train / 29,999 scored rows, runs end to end.
+- V3-2 stability (ADR-023): `netanomaly stability` → `outputs/stability/stability.{json,md}` (committed for
+  `data/synth`, byte-identical on rerun, ~90 s). Label-free, held-out days only; reference = mean of 10 seed models on
+  all training rows. **Seed stability**: Spearman rho 0.991 (0.986–0.995) over 45 pairs; top-100 overlap per day
+  0.75 median (0.59–0.86), worst day 0.57. **Sample-size curve** vs reference (5 seeds each, median top-100
+  overlap / rho): 500 rows 0.77 / 0.979, 1k 0.77 / 0.991, 2k 0.84 / 0.992, 5k 0.85 / 0.992, 10k 0.82 / 0.993,
+  20k 0.85 / 0.994, 50k 0.85 / 0.994, all 111,355 0.86 / 0.996. Plateau from ~2k–5k rows: forest randomness, not
+  sample size, limits top-K stability. Mock (scratch): seed overlap 0.92, rho 0.987.
+- Tests: 21 new (16 in `tests/test_model_split.py`, 5 in `tests/test_stability.py`); `test_synth_pipeline`,
+  `test_feature_registry` and the apostrophe-path test in `test_ingest` adapted (the latter needs 2 days now).
+  Mutation-checked: training date filter removed, score filter `>` → `>=`, row-order sample, sampling before the
+  date filter, Spearman without tie averaging — each fails a test.
 
 ## Completed (V2)
 - V2-5 feature cards (ADR-021): `src/netanomaly/feature_cards.py` (statistics), `feature_report.py` (rendering),
@@ -185,7 +220,7 @@ prerequisite for real-data use, not a V1 task (see below). V2 — Feature resear
 - Code review: 2 CRITICAL + 2 HIGH findings fixed with regression tests.
 
 ## Tests
-195 passing, 0 failing (22 new for V2-5: 21 in `tests/test_feature_cards.py`, 1 in `tests/test_synth_pipeline.py`; 14 new for V2-4: 13 in `tests/test_timing.py`, 1 in `tests/test_synth_pipeline.py`; 14 for V2-3: 13 in `tests/test_novelty.py`, 1 in `tests/test_synth_pipeline.py`; 15 new for V2-2: 14 in `tests/test_baselines.py`, 1 in `tests/test_synth_pipeline.py`; 22 for V2-1: 21 in `tests/test_feature_registry.py`, 1 lake check in
+216 passing, 0 failing (21 new for V3: 16 in `tests/test_model_split.py`, 5 in `tests/test_stability.py`; 22 new for V2-5: 21 in `tests/test_feature_cards.py`, 1 in `tests/test_synth_pipeline.py`; 14 new for V2-4: 13 in `tests/test_timing.py`, 1 in `tests/test_synth_pipeline.py`; 14 for V2-3: 13 in `tests/test_novelty.py`, 1 in `tests/test_synth_pipeline.py`; 15 new for V2-2: 14 in `tests/test_baselines.py`, 1 in `tests/test_synth_pipeline.py`; 22 for V2-1: 21 in `tests/test_feature_registry.py`, 1 lake check in
 `tests/test_synth_pipeline.py`; 46 in `tests/test_timestamps.py`; 3 are tiny-scale smoke tests of `scripts/memtest.py`; the 20M-row run is manual). ruff: 3 pre-existing ISC004 findings in `schema.py` (rule new in
 ruff 0.16.9; present on HEAD before V1-1); all other files clean.
 
@@ -193,11 +228,12 @@ ruff 0.16.9; present on HEAD before V1-1); all other files clean.
 - **Mock data has no host continuity** (58,311 src IPs in 60k flows; ≤2 flows per host per 5-min window).
   Host-window/baseline features cannot be evaluated on it; use `data/synth` here (real data is only for the
   company environment, ADR-012).
-- **V0 model has temporal leakage by design**: it trains on and scores the same 6 days, including attack days.
-  Must be fixed in V3 (time-based split, train on clean/earlier periods).
+- V0 temporal leakage (training on the scored/attack days) is fixed in V3 (ADR-022); the preserved V0 artifacts
+  still have it and are refused for scoring.
 - Field semantics unverified: `tcp_flag` (single label, not cumulative), `packet_length`, `time_code`,
   `vlad_id_customer` (66% > 4094), `flow_end_reason` (independent of flags in mock data).
-- Beaconing recall is low (1/3 at K=100): 5-minute windows cannot show periodicity (V2 timing features).
+- Beaconing recall is 0/3 at K=100 with V3 (V0's 1/3 came from training on attack days): 5-minute window features
+  cannot show periodicity, and the timing feature (`interarrival_cv`, V2-4) is not a model input yet.
 - Synthetic recall numbers are optimistic: attacks are loud and designed by us.
 - The 5% reject budget and the DQ volume band (0.5x–2x, ≥3 days of history) are untested against real exports.
 - DQ daily volume counts the whole lake per day, so re-running `dq --batch <old>` after later batches touch
@@ -225,8 +261,8 @@ ruff 0.16.9; present on HEAD before V1-1); all other files clean.
 - V1-5 limits: uniqueness of `flow_sequence` in real exports is still unknown, and no DQ check measures it
   (e.g. duplicates per exporter/observation domain); it only matters if a future step wants it as a key.
   The source-scan test matches the literal name only.
-- V2-1 limits: the pipeline does not read the registry yet (V0 feature list and log1p set are kept in sync by
-  tests); the V0 model trains on two not-usable features (`syn_only_ratio`, `rst_ratio`) until V3. Usability does
+- V2-1 limits: the model reads the registry since V3; `features.py` still computes all 9 V0 columns incl. the
+  not-usable `syn_only_ratio` / `rst_ratio` (kept so V0 artifacts stay reproducible; kept in sync by tests). Usability does
   not require `validated` (0/42), so every usable feature is provisional. ATT&CK entries are unreviewed hypotheses.
   Candidate transforms are prose, not executable, and are not yet checked against data (feature cards, V2-5).
 - V2-2 limits: baselines are whole-day, so they lag up to 24 h and the first 2 days of any lake are `none`;
@@ -262,14 +298,25 @@ ruff 0.16.9; present on HEAD before V1-1); all other files clean.
   assumption). The analysis table is one TEMP TABLE of the grid (DuckDB spills); cost at real volumes is unmeasured,
   and each pair with a NULL-bearing feature re-ranks its rows (O(features²) sorts). `labels.py` joins truth by
   `flow_sequence` (synthetic key, ADR-016) and is on the production-scan allow list with `alerts.py` and `synth.py`.
+- V3 limits (split): one positional split, no rolling/expanding retraining and no gap between training and scoring
+  days; the whole-day split assumes the training days are representative (no weekday/seasonality check on 3 days).
+  Training data is not known to be clean in real use; contamination only shows in synthetic `evaluate`. A one-day
+  lake cannot be trained (`run` refuses). `evaluate` reads the newest model's manifest, which may not be the model
+  that wrote `scores.parquet` if models were trained since. Feature set is the 7 window features; redundancy
+  (`bytes_out`/`packets_out`/`max_flow_bytes` |rho| ≥ 0.97) left in; prior-history features need a NULL policy first
+  (NaN→0 would make a missing `interarrival_cv` look perfectly regular). Scores are rankings within one model version.
+  `alerts.write_top_alerts` ranks without a tie-break, so equal scores at the K boundary can pick either window.
+- V3 limits (stability): measures ranking agreement, not detection; the synthetic days are near-stationary, so real
+  data may be less stable. Only seed and sample size vary (not `n_estimators`, `max_samples`, split point or
+  feature set). 3 scored days → the worst-day figure rests on 3 values per model. Cost grows with models × score rows.
 - Existing `data/lake` and `data/synth/lake` were built by V0 code; re-ingest is not needed (output is identical)
   and would only add `rejected_rows` to the ledger.
 
 ## Important decisions
-See `DECISIONS.md` (ADR-001 … ADR-021).
+See `DECISIONS.md` (ADR-001 … ADR-023).
 
 ## Next task
-V3-1 (not started): time-based train/score split for the Isolation Forest (fix the V0 leakage) and train only on
-registry-usable features (drop or replace `syn_only_ratio` / `rst_ratio`); use the V2-5 feature cards to choose the
-V3 feature set (redundant volume features, NULL handling for `bytes_out_robust_z` / `interarrival_cv`).
-Mock/synthetic data only. Real-exporter semantic validation remains an external prerequisite.
+V4 (not started) — evaluation: attack intensity sweeps; recall@K 50/100/500 across seeds (ADR-023: single-model
+top-100 membership is seed-dependent); robust-z and rule baselines; decide whether prior-history features
+(`bytes_out_robust_z`, novelty, `interarrival_cv`) become model inputs, with a NULL policy. Mock/synthetic data only.
+Real-exporter semantic validation remains an external prerequisite.
