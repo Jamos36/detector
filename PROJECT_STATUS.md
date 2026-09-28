@@ -5,7 +5,7 @@ _Last updated: 2026-09-27_
 ## Current milestone
 V0 — Prototype: **complete**. V1 — Ingestion and Data Quality: **implementation complete** (V1-1 … V1-5
 implemented and tested on mock/synthetic data). **Real-exporter semantic validation: pending** — an external
-prerequisite for real-data use, not a V1 task (see below). V2 — Feature research: **in progress** (V2-1 … V2-4 done).
+prerequisite for real-data use, not a V1 task (see below). V2 — Feature research: **implementation complete** (V2-1 … V2-5 done on mock/synthetic data). V3 not started.
 
 ## Real-data onboarding — external prerequisite (pending)
 - Exporter/collector documentation is needed to validate field meanings before any real-data use. It cannot be
@@ -35,6 +35,35 @@ prerequisite for real-data use, not a V1 task (see below). V2 — Feature resear
 - Real-data prerequisites: collector documentation to validate contract fields; re-deriving thresholds.
 
 ## Completed (V2)
+- V2-5 feature cards (ADR-021): `src/netanomaly/feature_cards.py` (statistics), `feature_report.py` (rendering),
+  `labels.py` (truth verification + labels); `netanomaly feature-cards` → `outputs/feature_cards/feature_cards.{json,md}`
+  (committed for `data/synth`); settings `feature_cards:` in config.yaml. **Synthetic diagnostics only — no number
+  here is a real-world performance estimate.** Analysed: the 11 usable implemented features (7 V0 + `bytes_out_robust_z`,
+  `new_dst_ip_rate`, `new_dst_port_rate`, `interarrival_cv`); not analysed and listed as such: 5 usable candidates
+  (not implemented) and 3 not-usable features (`syn_only_ratio`, `rst_ratio` — still V0 model inputs — and
+  `mean_packet_length`). Rows = 222,760 host-windows (V0 grid; the 3 V2 tables checked to cover it exactly); ~5 s.
+  Truth verified before use: 15 injections, 3,300/3,300 truth flows each match exactly one lake flow, 0 src_ip or
+  count mismatches; 260 injected host-windows (beaconing 218, exfil 18, brute force 9, horizontal 9, vertical 6),
+  median purity ≥ 84.5% (min 25% for a beacon window, 33% exfil). PSI reference = 2026-09-03 (lake day index 2).
+  Findings (synthetic): every feature is stable on the compare days (max PSI 0.0032); warm-up shows as shift
+  (`bytes_out_robust_z` PSI 16 on days 1–2 = 100% NULL; `new_dst_ip_rate` 0.42 on day 1). Missingness:
+  `bytes_out_robust_z` 33.3% (baseline `none` on days 1–2), `interarrival_cv` 93.5% (93.1% insufficient, 0.4% none),
+  others 0%. Redundant (|rho| ≥ 0.9): `bytes_out`–`bytes_out_robust_z` 0.993, –`max_flow_bytes` 0.99, –`packets_out`
+  0.977, `flows`–`uniq_dst_ip` 0.969 (+3 pairs among the volume features); novelty and timing features are nearly
+  uncorrelated with everything (|rho| ≤ 0.28). Best single-feature AUROC per attack: beaconing `flows` 0.986 /
+  `interarrival_cv` 0.983; brute force `flows` 1.0; exfil `bytes_out_robust_z` 1.0 / `bytes_out` 0.999; horizontal
+  scan `flows`, `uniq_dst_ip` 1.0, `new_dst_ip_rate` 0.988; vertical scan `flows`, `uniq_dst_port`,
+  `new_dst_port_rate` 1.0. `internal_ratio` scores < 0.5 for beaconing/exfil (external destinations): its declared
+  direction fits lateral movement only. The high `flows` AUROC for beaconing reflects a loud synthetic beacon (~5
+  flows per 5-min window vs a median of 1), not a property to expect in real traffic. Mock lake (scratch copy, not
+  committed): no truth → AUROC skipped; `flows`/`uniq_*` have 2 distinct values, `new_dst_ip_rate` is constant
+  (rho undefined — this run found and fixed a NaN-in-JSON bug), `interarrival_cv` 100% NULL. Tests: 22 (21 in
+  `tests/test_feature_cards.py` — PSI formula/floor/bins/NULL bin, AUROC vs scikit-learn with ties and NULLs,
+  per-attack populations, Spearman vs SciPy incl. NULL re-ranking and constant features, feature selection, truth
+  refusal cases, window-boundary labels, grid coverage, JSON rounding; 1 end-to-end in `tests/test_synth_pipeline.py`
+  checking V0 features and model files are byte-identical). Mutation-checked: bin edge `<` → `<=`, NULLs ranked
+  highest, other attacks kept as negatives, NULL rows kept in re-ranking, label bucket shifted by 1 µs, grid check
+  disabled — each fails a test.
 - V2-4 timing regularity (ADR-020): `src/netanomaly/timing.py`, `netanomaly timing` →
   `features/host_timing/flow_date=…/part-0.parquet`; settings `timing:` in config.yaml. For host-window W,
   `interarrival_cv` uses only the host's flows with `flow_start` in [W − `history_hours` (2 h; 1–24 allowed), W):
@@ -156,7 +185,7 @@ prerequisite for real-data use, not a V1 task (see below). V2 — Feature resear
 - Code review: 2 CRITICAL + 2 HIGH findings fixed with regression tests.
 
 ## Tests
-173 passing, 0 failing (14 new for V2-4: 13 in `tests/test_timing.py`, 1 in `tests/test_synth_pipeline.py`; 14 for V2-3: 13 in `tests/test_novelty.py`, 1 in `tests/test_synth_pipeline.py`; 15 new for V2-2: 14 in `tests/test_baselines.py`, 1 in `tests/test_synth_pipeline.py`; 22 for V2-1: 21 in `tests/test_feature_registry.py`, 1 lake check in
+195 passing, 0 failing (22 new for V2-5: 21 in `tests/test_feature_cards.py`, 1 in `tests/test_synth_pipeline.py`; 14 new for V2-4: 13 in `tests/test_timing.py`, 1 in `tests/test_synth_pipeline.py`; 14 for V2-3: 13 in `tests/test_novelty.py`, 1 in `tests/test_synth_pipeline.py`; 15 new for V2-2: 14 in `tests/test_baselines.py`, 1 in `tests/test_synth_pipeline.py`; 22 for V2-1: 21 in `tests/test_feature_registry.py`, 1 lake check in
 `tests/test_synth_pipeline.py`; 46 in `tests/test_timestamps.py`; 3 are tiny-scale smoke tests of `scripts/memtest.py`; the 20M-row run is manual). ruff: 3 pre-existing ISC004 findings in `schema.py` (rule new in
 ruff 0.16.9; present on HEAD before V1-1); all other files clean.
 
@@ -224,14 +253,23 @@ ruff 0.16.9; present on HEAD before V1-1); all other files clean.
   `flow_start` meaning is unvalidated (0/42). Every run recomputes all days (no incremental state); memory is one
   day plus the day before, but the history join replicates each event per active window of the host (≤ 24× at 2 h),
   unmeasured at real volumes.
+- V2-5 limits (feature cards): synthetic diagnostics only — few, loud, self-designed attacks (6–18 positive
+  windows per type except beaconing), so AUROC shows whether a feature *can* separate them, not real performance;
+  single-feature AUROC ignores alert budgets and feature interactions. The label (window contains injected flows)
+  penalises lagging prior-history features. PSI uses a one-day positional reference and reads ~0 on clean synthetic
+  days by construction; drift on real data needs a rolling/seasonal reference (V4/real-data work). The `any` AUROC is
+  dominated by beaconing windows. Directions are declared a priori (`internal_ratio` high is a lateral-movement
+  assumption). The analysis table is one TEMP TABLE of the grid (DuckDB spills); cost at real volumes is unmeasured,
+  and each pair with a NULL-bearing feature re-ranks its rows (O(features²) sorts). `labels.py` joins truth by
+  `flow_sequence` (synthetic key, ADR-016) and is on the production-scan allow list with `alerts.py` and `synth.py`.
 - Existing `data/lake` and `data/synth/lake` were built by V0 code; re-ingest is not needed (output is identical)
   and would only add `rejected_rows` to the ledger.
 
 ## Important decisions
-See `DECISIONS.md` (ADR-001 … ADR-020).
+See `DECISIONS.md` (ADR-001 … ADR-021).
 
 ## Next task
-V2-5: feature cards (distribution, missingness, cardinality, redundancy, PSI stability, single-feature AUROC on
-injections) for the registry's usable features, incl. `bytes_out_robust_z`, novelty rates and `interarrival_cv`.
-Mock/synthetic data only; unvalidated field meanings stay provisional. Real-exporter semantic validation remains an
-external prerequisite.
+V3-1 (not started): time-based train/score split for the Isolation Forest (fix the V0 leakage) and train only on
+registry-usable features (drop or replace `syn_only_ratio` / `rst_ratio`); use the V2-5 feature cards to choose the
+V3 feature set (redundant volume features, NULL handling for `bytes_out_robust_z` / `interarrival_cv`).
+Mock/synthetic data only. Real-exporter semantic validation remains an external prerequisite.
