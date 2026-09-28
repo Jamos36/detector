@@ -16,6 +16,7 @@ from netanomaly.config import ModelSettings
 from netanomaly.feature_registry import load_registry
 from netanomaly.ingest import ingest_directory
 from netanomaly.inject import ATTACKS, InjectionLog, make_injector
+from netanomaly.schema import load_contract
 from netanomaly.synth import generate
 
 START = date(2026, 9, 1)
@@ -87,8 +88,12 @@ def test_injection_truth_points_at_injected_flows(tmp_path, con, contract):
 
 def test_batched_scoring_equals_single_batch(synth_root, con, tmp_path):
     hw = synth_root / "features" / "host_window"
-    model, manifest, _ = iforest.train(con, hw, list(features.HOST_WINDOW_FEATURES),
-                                       ModelSettings(train_sample_rows=5_000, n_estimators=20), tmp_path / "m")
+    registry = load_registry()
+    names = iforest.model_features(registry, load_contract())
+    split = iforest.time_split(iforest.feature_dates(con, hw), 0.5)
+    model, manifest, _ = iforest.train(con, hw, names, iforest.log1p_features(registry, names), split,
+                                       ModelSettings(train_sample_rows=5_000, n_estimators=20), tmp_path / "m",
+                                       registry.registry_version)
     n_small = iforest.score(con, hw, model, manifest, tmp_path / "small.parquet", batch_rows=1_000)
     n_big = iforest.score(con, hw, model, manifest, tmp_path / "big.parquet", batch_rows=10_000_000)
     q = "SELECT src_ip, window_start, anomaly_score FROM read_parquet('{}') ORDER BY 1, 2"

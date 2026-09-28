@@ -24,6 +24,7 @@ from netanomaly import (
     feature_report,
     features,
     iforest,
+    labels,
     novelty,
     quality,
     timing,
@@ -151,16 +152,25 @@ def cmd_feature_cards(args: argparse.Namespace, s: Settings) -> None:
 
 
 def cmd_train(args: argparse.Namespace, s: Settings) -> None:
-    _, manifest, out = iforest.train(connect(s.duckdb), _host_window_dir(s), list(features.HOST_WINDOW_FEATURES),
-                                     s.model, s.paths.models)
-    log.info("trained %s on %d rows -> %s", manifest.model_version, manifest.train_rows, out)
+    registry = feature_registry.load_registry()
+    contract = load_contract(registry.contract)
+    con = connect(s.duckdb)
+    names = iforest.model_features(registry, contract)
+    split = iforest.time_split(iforest.feature_dates(con, _host_window_dir(s)), s.split.train_fraction)
+    _, manifest, out = iforest.train(con, _host_window_dir(s), names, iforest.log1p_features(registry, names), split,
+                                     s.model, s.paths.models, registry.registry_version)
+    log.info("trained %s on %d of %d rows from %s..%s (%d days); scores only days after %s; features %s -> %s",
+             manifest.model_version, manifest.train_rows, manifest.train_period_rows, split.train_dates[0],
+             split.train_end, len(split.train_dates), manifest.score_after, ",".join(names), out)
 
 
 def cmd_score(args: argparse.Namespace, s: Settings) -> None:
     model, manifest = _latest_model(s)
+    registry = feature_registry.load_registry()
+    iforest.check_scorable(manifest, registry, load_contract(registry.contract))
     n = iforest.score(connect(s.duckdb), _host_window_dir(s), model, manifest, s.paths.outputs / SCORES_FILE,
                       s.batch_rows)
-    log.info("scored %d rows with %s", n, manifest.model_version)
+    log.info("scored %d rows after %s with %s", n, manifest.score_after, manifest.model_version)
 
 
 def cmd_alerts(args: argparse.Namespace, s: Settings) -> None:
@@ -172,6 +182,14 @@ def cmd_alerts(args: argparse.Namespace, s: Settings) -> None:
 
 def cmd_evaluate(args: argparse.Namespace, s: Settings) -> None:
     con = connect(s.duckdb)
+    _, manifest = _latest_model(s)
+    if manifest.score_after is not None:
+        by_day = labels.injected_windows_by_date(con, s.paths.lake, _truth_dir(s), s.window_minutes)
+        train_days = {date.fromisoformat(d) for d in manifest.train_dates}
+        after = date.fromisoformat(manifest.score_after)
+        log.info("held-out check (synthetic truth, after training): injected host-windows on training days %d, "
+                 "on scored days %d", sum(n for d, n in by_day.items() if d in train_days),
+                 sum(n for d, n in by_day.items() if d > after))
     for k in args.k:
         for attack, found, total, best in alerts.recall_at_k(con, s.paths.outputs / SCORES_FILE, s.paths.lake,
                                                              _truth_dir(s), k, s.window_minutes):

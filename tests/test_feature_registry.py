@@ -51,7 +51,8 @@ def test_implemented_features_match_the_pipeline(registry):
     model_inputs = [f for f in implemented if f.name not in not_model_inputs]
     assert tuple(f.name for f in model_inputs) == features.HOST_WINDOW_FEATURES
     assert {f.name for f in implemented} - {f.name for f in model_inputs} == not_model_inputs
-    assert {f.name for f in implemented if f.model_transform is ModelTransform.LOG1P} == iforest.LOG1P_FEATURES
+    log1p = {f.name for f in implemented if f.model_transform is ModelTransform.LOG1P}
+    assert set(iforest.log1p_features(registry, features.HOST_WINDOW_FEATURES)) == log1p
 
 
 def test_features_on_low_confidence_or_excluded_fields_are_not_usable(registry, contract):

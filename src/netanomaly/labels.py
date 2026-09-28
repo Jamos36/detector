@@ -100,3 +100,13 @@ SELECT src_ip, {bucket} AS window_start,
        list(DISTINCT attack_type ORDER BY attack_type) AS attack_types, count(*) AS injected_flows
 FROM ({_truth_flows_sql(lake, truth_dir)})
 GROUP BY ALL"""
+
+
+def injected_windows_by_date(con: duckdb.DuckDBPyConnection, lake: Path, truth_dir: Path,
+                             window_minutes: int) -> dict[date, int]:
+    """Host-windows containing injected flows, per UTC day. A held-out diagnostic for the time split (V3): it is
+    computed after training and never feeds it."""
+    verify_truth(con, lake, truth_dir)
+    return dict(con.execute(
+        f"SELECT CAST(window_start AS DATE), count(*) FROM ({window_labels_sql(lake, truth_dir, window_minutes)}) "
+        "GROUP BY 1 ORDER BY 1").fetchall())

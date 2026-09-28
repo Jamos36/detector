@@ -226,3 +226,31 @@ beacon); `any` is dominated by the attack with the most windows (beaconing, 218 
 is near 0 by construction and says little about real drift; per-type AUROCs rest on 6–18 windows except beaconing.
 Revisit when: V4 evaluates recall@K under alert budgets, real data needs a rolling or seasonal reference, or a
 flow-level feature is implemented.
+
+## ADR-022: Time-based split by whole UTC days; model inputs from the registry; V0 artifacts kept but not scorable
+Decision (V3-1): the lake's host_window days are split by position — the first `floor(n_days * train_fraction)`
+(default 0.5) train, only later days are scored (`manifest.score_after` = last training day). Training rows are
+filtered by date before sampling; the sample is the lowest `hash(src_ip, window_start, seed)` rows, sorted by key.
+The model's inputs are the registry features that are usable against the contract, implemented, host_window and
+window-scope (7: the V0 set without `syn_only_ratio`/`rst_ratio`); the log1p set comes from the registry too.
+V0 models and outputs stay on disk (`data/synth/outputs/v0/`) but `score` refuses a manifest without a split or with
+an input the registry rates not usable.
+Reason: V0 trained on and scored the same 6 days including attack days. Whole days keep every window of a day on
+one side and match the prior-history features' day granularity; a positional fraction needs no labels and no dataset
+dates in the config, so the same rule runs on unlabelled real data. The reservoir sample it replaces depended on row
+order, so adding later rows or files could change it; a per-row hash cannot. Reading inputs from the registry makes
+ADR-017's eligibility binding rather than a test.
+Rejected: a fixed train-end date in config (dataset specific); choosing the training days from the generator's clean
+days or the truth (uses labels) — the default happens to coincide with the synthetic clean days (3 of 6), which is
+disclosed, and `evaluate` reports injected windows on training days as a held-out check; rolling/expanding
+retraining (later, if evaluation asks for it); adding the prior-history features now (they need a NULL policy —
+`interarrival_cv` is 93.5% NULL and NaN -> 0 would read as "perfectly regular" — and their own evaluation); keeping
+the not-usable features as a V0-compatible option.
+Consequences (synthetic diagnostics, not real-world performance): recall@100 changes from V0 beaconing 1/3, others
+3/3 to beaconing 0/3, others 3/3. A V3-split model on the 9 V0 features also gives beaconing 0/3 (the V0 beacon hit
+was at rank 96, by a model that had trained on the attack days). Dropping `syn_only_ratio`/`rst_ratio` moves scans and
+brute force from best ranks 1–7 to 10–37 and exfil from 35 to 21. Training contamination is 0 injected windows here,
+but real training days are not known to be clean. A lake needs >= 2 days; `run` refuses a one-day lake.
+Revisit when: evaluation needs rolling retraining or a gap between training and scoring, prior-history features get
+a NULL policy, or collector documentation changes a field's confidence (the model set follows automatically).
+

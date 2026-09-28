@@ -356,5 +356,11 @@ def test_paths_with_apostrophes_work_end_to_end(tmp_path):
     raw = root / "raw"
     raw.mkdir(parents=True)
     shutil.copy(FIXTURES / "sample.csv", raw / "sample.csv")
+    main(["--root", str(root), "ingest"])  # a single day: ingest and features, but no time split to train on
+    main(["--root", str(root), "features"])
+    # two synthetic CSV days, so `run` can train on the first and score the second (V3 time split)
+    main(["--root", str(root), "generate", "--days", "2", "--clean-days", "2", "--hosts", "20", "--format", "csv"])
+    (raw / "sample.csv").unlink()
+    shutil.rmtree(root / "lake")
     main(["--root", str(root), "run"])
     assert (root / "outputs" / "top_alerts.csv").exists()

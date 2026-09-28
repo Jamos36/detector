@@ -67,6 +67,12 @@ class FeatureCardSettings(BaseModel):
     redundancy_threshold: float = Field(default=0.9, gt=0, le=1)  # |Spearman rho| at or above: flagged redundant
 
 
+class SplitSettings(BaseModel):
+    # Time-based split (V3, iforest.time_split): the first floor(n_days * train_fraction) UTC days of the feature
+    # table train the model; only later days are scored. Positional, so it never looks at labels.
+    train_fraction: float = Field(default=0.5, gt=0, lt=1)
+
+
 class ModelSettings(BaseModel):
     train_sample_rows: int = Field(default=200_000, ge=1_000)
     n_estimators: int = Field(default=200, ge=10)
@@ -83,6 +89,7 @@ class Settings(BaseModel):
     baseline: BaselineSettings = BaselineSettings()
     timing: TimingSettings = TimingSettings()
     feature_cards: FeatureCardSettings = FeatureCardSettings()
+    split: SplitSettings = SplitSettings()
     model: ModelSettings = ModelSettings()
     batch_rows: int = Field(default=50_000, ge=1_000)
     window_minutes: int = Field(default=5, ge=1)

@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+- feat (V3-1): time-based train/score split (ADR-022). `train` fits on the first floor(n_days x `split.train_fraction`)
+  (0.5) UTC days of host_window, filtered before a per-row hash sample; `score` writes only later days. Inputs come
+  from the registry (usable, implemented, window-scope host_window): 7 features, dropping V0 `syn_only_ratio` /
+  `rst_ratio`; log1p set from the registry. Manifest gains the split, registry and DuckDB versions. V0 artifacts kept
+  (`data/synth/outputs/v0/`) but refused for scoring. `evaluate` logs injected windows on training vs scored days.
+  `train`/`run` now need >= 2 days of features.
 - feat (V2-5): feature cards `netanomaly feature-cards` → `outputs/feature_cards/feature_cards.{json,md}` (ADR-021).
   For the 11 usable implemented registry features: distribution, missingness with quality levels, cardinality,
   Spearman redundancy, PSI per day against a positional reference (day index 2), single-feature AUROC per injected

@@ -208,8 +208,9 @@ def to_markdown(registry: Registry, contract: Contract, name: str = "features_v1
     if in_use_blocked:
         lines += [
             (
-                f"**Implemented but not usable:** {', '.join(f'`{n}`' for n in in_use_blocked)}. The V0 model still "
-                "trains on them; removing or replacing them is a model change (V3), not done here."
+                f"**Implemented but not usable:** {', '.join(f'`{n}`' for n in in_use_blocked)}. Still computed in "
+                "the `host_window` table (V0 artifacts stay reproducible) and used by the preserved V0 model, but "
+                "never by a V3 model, which takes its inputs from the usable features here (ADR-022)."
             ),
             "",
         ]

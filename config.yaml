@@ -44,8 +44,11 @@ batch_rows: 50000          # rows per Arrow batch when scoring
 window_minutes: 5
 alert_budget_per_day: 100  # top-K host-windows per day, not a severity threshold
 
+split:                       # time-based train/score split (V3, ADR-022)
+  train_fraction: 0.5        # first floor(n_days * 0.5) UTC days train; only later days are scored
+
 model:
-  train_sample_rows: 200000
+  train_sample_rows: 200000  # hash sample of the training days; all of them if fewer
   n_estimators: 200
   max_samples: 256
   seed: 42

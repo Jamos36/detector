@@ -4,7 +4,7 @@
 
 Contract: `netflow_v1` schema version 1. **16 of 19 registered features are usable**; **0 of 16 usable features rest only on validated fields.** Every other usable feature is provisional: its source meanings are inferred, not confirmed by exporter/collector documentation.
 
-**Implemented but not usable:** `syn_only_ratio`, `rst_ratio`. The V0 model still trains on them; removing or replacing them is a model change (V3), not done here.
+**Implemented but not usable:** `syn_only_ratio`, `rst_ratio`. Still computed in the `host_window` table (V0 artifacts stay reproducible) and used by the preserved V0 model, but never by a V3 model, which takes its inputs from the usable features here (ADR-022).
 
 - **usable**: every source column has confidence high/medium and model_use entity/feature/derive (computed from the contract, never declared in the registry).
 - **validated**: shown per source. It does not gate usability yet, because with 0 of 42 contract fields validated it would block every feature; it must be resolved before real-data use.
