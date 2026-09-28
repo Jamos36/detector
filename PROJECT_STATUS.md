@@ -5,7 +5,7 @@ _Last updated: 2026-09-27_
 ## Current milestone
 V0 — Prototype: **complete**. V1 — Ingestion and Data Quality: **implementation complete** (V1-1 … V1-5
 implemented and tested on mock/synthetic data). **Real-exporter semantic validation: pending** — an external
-prerequisite for real-data use, not a V1 task (see below). V2 — Feature research: **in progress** (V2-1, V2-2, V2-3 done).
+prerequisite for real-data use, not a V1 task (see below). V2 — Feature research: **in progress** (V2-1 … V2-4 done).
 
 ## Real-data onboarding — external prerequisite (pending)
 - Exporter/collector documentation is needed to validate field meanings before any real-data use. It cannot be
@@ -35,6 +35,25 @@ prerequisite for real-data use, not a V1 task (see below). V2 — Feature resear
 - Real-data prerequisites: collector documentation to validate contract fields; re-deriving thresholds.
 
 ## Completed (V2)
+- V2-4 timing regularity (ADR-020): `src/netanomaly/timing.py`, `netanomaly timing` →
+  `features/host_timing/flow_date=…/part-0.parquet`; settings `timing:` in config.yaml. For host-window W,
+  `interarrival_cv` uses only the host's flows with `flow_start` in [W − `history_hours` (2 h; 1–24 allowed), W):
+  never W's own flows or later. Series = (`src_ip`, `dst_ip`), events = distinct `flow_start` instants (ties = one
+  event); gaps between consecutive events inside the history window; a series needs ≥ `min_events` (10); CV =
+  stddev_pop / mean; host value = minimum CV (ties → lowest `dst_ip`) with `timing_dst_ip`, `timing_events`,
+  `timing_median_gap_s`. `timing_quality` ok / insufficient / none (CV NULL unless ok), `history_complete`,
+  `timing_pairs`, `history_pairs`, `history_events`. No subnet fallback. Registry-checked inputs (`src_ip`,
+  `dst_ip`, `flow_start`: usable, provisional). Not in `run`, not a model input; V0 features byte-identical in test.
+  Synthetic run (`data/synth`, committed): 222,760 rows in ~4 s, same grid as V0 host_window. Per day ~2,100–2,600
+  rows `ok`, ~34,500 `insufficient` (no series with 10 events in 2 h), 71–384 `none`; first 2 h of the lake
+  `history_complete = false` (1,611 rows). Clean-traffic CV: median ≈ 0.84, minimum 0.29–0.37 per day (regular
+  server polling, ~10-min gaps). Each of the 3 injected beacons (60 s ± 10%, 6 h) ranks #1 on its day (min CV
+  0.039–0.052, median gap ≈ 60 s); its 76–87 rows are the only rows with CV < 0.2, first ~10–15 min after the
+  beacon starts and lasting until ~2 h after it stops (the feature describes the preceding 2 h). Mock lake (scratch
+  copy, not committed): no host continuity, 0 `ok` rows (59,958 none, 40 insufficient). Tests: leakage (flows in
+  the cutoff window and later, incl. ties with it), tied timestamps, CV ties, shuffled rows/files with reversed
+  `flow_sequence`, day-crossing history, window edges; mutation-checked (own window or a future hour leaking,
+  no tie dedupe, gap endpoint before the history window each fail tests).
 - V2-3 host novelty (ADR-019): `src/netanomaly/novelty.py`, `netanomaly novelty [--rebuild]` →
   `features/host_novelty/flow_date=…/part-0.parquet` + seen set `features/novelty_state/`. A `dst_ip` (`dst_port`)
   is new in a host-window when the host has no flow to it with `flow_start` before the window start (whole lake, no
@@ -137,7 +156,7 @@ prerequisite for real-data use, not a V1 task (see below). V2 — Feature resear
 - Code review: 2 CRITICAL + 2 HIGH findings fixed with regression tests.
 
 ## Tests
-159 passing, 0 failing (14 new for V2-3: 13 in `tests/test_novelty.py`, 1 in `tests/test_synth_pipeline.py`; 15 new for V2-2: 14 in `tests/test_baselines.py`, 1 in `tests/test_synth_pipeline.py`; 22 for V2-1: 21 in `tests/test_feature_registry.py`, 1 lake check in
+173 passing, 0 failing (14 new for V2-4: 13 in `tests/test_timing.py`, 1 in `tests/test_synth_pipeline.py`; 14 for V2-3: 13 in `tests/test_novelty.py`, 1 in `tests/test_synth_pipeline.py`; 15 new for V2-2: 14 in `tests/test_baselines.py`, 1 in `tests/test_synth_pipeline.py`; 22 for V2-1: 21 in `tests/test_feature_registry.py`, 1 lake check in
 `tests/test_synth_pipeline.py`; 46 in `tests/test_timestamps.py`; 3 are tiny-scale smoke tests of `scripts/memtest.py`; the 20M-row run is manual). ruff: 3 pre-existing ISC004 findings in `schema.py` (rule new in
 ruff 0.16.9; present on HEAD before V1-1); all other files clean.
 
@@ -195,13 +214,24 @@ ruff 0.16.9; present on HEAD before V1-1); all other files clean.
   unmeasured. Change detection uses file names + sizes (a same-name, same-size rewrite needs `--rebuild`); late flows
   recompute every later day. `dst_ip`/`dst_port` meanings are unvalidated (0/42), so the features are provisional.
   NAT/DHCP (one `src_ip` = several machines over time) would blur the seen set; not modelled.
+- V2-4 limits: lagging by construction — a beacon is seen after ~`min_events` periods and stays visible up to
+  `history_hours` after it stops, so rows after the beacon ends still rank high (V5 incident merging must account
+  for it). Periods longer than ~13 min (2 h / 9 gaps) are invisible with defaults; jitter above ~50%, missed
+  check-ins or sleep schedules raise the CV. Legitimate periodic traffic (NTP, update/monitoring polling, keep-alives)
+  and exporter active-timeout splits of long flows also give low CV; no allow-list or role context. Series merge all
+  ports/protocols to one `dst_ip`; NAT/proxy destinations mix many conversations. `min_events` 10 and 2 h are
+  untuned; synthetic beacons are clean (fixed 60 s, ±10% uniform jitter), so separation here is optimistic.
+  `flow_start` meaning is unvalidated (0/42). Every run recomputes all days (no incremental state); memory is one
+  day plus the day before, but the history join replicates each event per active window of the host (≤ 24× at 2 h),
+  unmeasured at real volumes.
 - Existing `data/lake` and `data/synth/lake` were built by V0 code; re-ingest is not needed (output is identical)
   and would only add `rejected_rows` to the ledger.
 
 ## Important decisions
-See `DECISIONS.md` (ADR-001 … ADR-019).
+See `DECISIONS.md` (ADR-001 … ADR-020).
 
 ## Next task
-V2-4: timing regularity over ≥ 1 h windows for beaconing (registry `interarrival_cv`; see `TODO.md`), with a leakage
-test if it uses history. Mock/synthetic data only; unvalidated field meanings stay provisional. Real-exporter
-semantic validation remains an external prerequisite.
+V2-5: feature cards (distribution, missingness, cardinality, redundancy, PSI stability, single-feature AUROC on
+injections) for the registry's usable features, incl. `bytes_out_robust_z`, novelty rates and `interarrival_cv`.
+Mock/synthetic data only; unvalidated field meanings stay provisional. Real-exporter semantic validation remains an
+external prerequisite.
