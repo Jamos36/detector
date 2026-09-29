@@ -12,3 +12,9 @@ wheels/
 
 # data and pipeline outputs (never commit network data)
 .aas-*/
+
+# PoC: local configs and work directories may name or contain real data; keep them out of git (ADR-012)
+poc.yaml
+/outputs/
+/work/
+/poc-work/

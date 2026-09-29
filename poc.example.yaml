@@ -1,0 +1,91 @@
+# Example PoC experiment config (netanomaly poc <stage> --config poc.yaml). Copy it OUTSIDE this repository
+# (or keep it here: it holds no data), and point the environment variables at the authorised data environment:
+#   NETANOMALY_DATA  directory (or glob) with the NetFlow Parquet files
+#   NETANOMALY_WORK  writable directory for features, models, scores and reports (outside this checkout)
+# Inputs or outputs inside the repository are refused (ADR-012) unless allow_inside_repo is true, which asserts the
+# data is mock/synthetic.
+
+name: pentest-poc                      # prefix of the experiment id (letters, digits, . _ -)
+input:
+  paths: ["${NETANOMALY_DATA}"]        # files, directories (all *.parquet below) or globs; Parquet only
+  field_map: {}                        # canonical -> source column; unset fields use the netflow_v1 contract names
+  #   flow_start: first_switched        # e.g. when the export uses other names (see `poc profile` output)
+  #   src_ip: src_addr
+  epoch_unit: {}                       # canonical timestamp -> s | ms | us | ns when it is an integer epoch
+work_dir: "${NETANOMALY_WORK}"
+annotations: annotations.example.yaml  # pentest date ranges (weak context, never labels); remove if none
+annotation_buffer_hours: 24            # windows this close to a range are "buffer / uncertain"
+allow_inside_repo: false
+
+window_minutes: 60                     # host x window row unit; must divide 1440
+
+features:                              # model inputs (see FEATURES.md); a change is a new experiment id
+  include: null                        # null = every feature whose source fields are mapped
+  exclude: []                          # e.g. [packets_total, max_flow_bytes] to drop redundant volume features
+
+split:                                 # chronological, whole UTC days, [start, end)
+  train: {start: 2025-01-01, end: 2025-07-01}        # choose a period you believe is mostly normal traffic
+  validation: {start: 2025-07-01, end: 2025-09-01}   # tuning + band calibration
+  test: {start: 2025-09-01, end: 2026-01-01}         # untouched later period (simulated deployment)
+  # without explicit periods: fractions of the days with data, in time order
+  fractions: [0.6, 0.2, 0.2]
+  exclude_annotated_from_train: false  # true = drop windows in supplied ranges (+buffer) from the baseline
+
+models:
+  seed: 42
+  n_jobs: 2
+  max_matrix_mb: 1024                  # refuse a training matrix above this estimate
+  iforest:
+    enabled: true
+    n_estimators: 200
+    max_samples: 256
+    max_features: 1.0
+    contamination: auto                # affects sklearn's binary predict() only; never used for bands
+    max_train_rows: 200000             # bounded, day-spread hash sample of the training windows
+    scaler: none
+  ocsvm:
+    enabled: true
+    kernel: rbf
+    nu: 0.05                           # modelling bound on training margin errors, not an attack rate
+    gamma: scale
+    max_train_rows: 20000              # fit cost grows ~quadratically with rows
+    hard_max_train_rows: 100000
+    scaler: standard
+
+bands:                                 # rank/review bands, not probabilities or severities
+  reference: validation                # period whose scores define the cutoffs
+  mode: quantile                       # quantile | budget
+  quantiles: {Critical: 0.999, High: 0.995, Medium: 0.99, Low: 0.975}
+  budget_per_day: {Critical: 2, High: 10, Medium: 25, Low: 60}   # used when mode: budget
+  below_label: Benign                  # = below the review threshold, not "safe"
+
+diagnostics:
+  top_k_per_day: 20
+  top_n: 200
+  seed_repeats: 2                      # extra seeds per model for ranking stability
+  buffer_hours_sensitivity: [0, 24, 72, 168]
+  trim_refit_quantile: 0.99            # contamination variant: refit without the top 1 % training windows
+
+report:
+  top_candidates: 25
+  heatmap_entities: 30
+  zoom_periods: 3
+  zoom_hours: 48
+  trace_top_n: 50                      # alerts traced to source files / row indexes (one scan of the flows)
+  trace_rows_per_window: 5
+  chart_format: svg                    # svg | png
+
+search:                                # candidates for `netanomaly poc search` (validation period only)
+  iforest:
+    - {n_estimators: 100}
+    - {max_samples: 1024}
+    - {max_features: 0.7}
+  ocsvm:
+    - {nu: 0.01}
+    - {gamma: 0.1}
+
+batch_rows: 100000                     # rows per Arrow batch when scoring
+duckdb:
+  memory_limit: 2GB
+  threads: 4
+  # temp_directory defaults to <work_dir>/tmp/duckdb

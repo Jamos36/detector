@@ -220,14 +220,80 @@ def cmd_schema_doc(args: argparse.Namespace, s: Settings) -> None:
 
 def cmd_feature_doc(args: argparse.Namespace, s: Settings) -> None:
     out = Path(args.config).resolve().parent / "FEATURES.md"
+    from netanomaly.poc.featureset import features_document
+
     registry = feature_registry.load_registry()
-    out.write_text(feature_registry.to_markdown(registry, load_contract(registry.contract)), encoding="utf-8")
+    legacy = feature_registry.to_markdown(registry, load_contract(registry.contract))
+    out.write_text(features_document(legacy), encoding="utf-8")
     log.info("wrote %s", out)
 
 
 def cmd_run(args: argparse.Namespace, s: Settings) -> None:
     for step in (cmd_ingest, cmd_dq, cmd_features, cmd_train, cmd_score, cmd_alerts):
         step(args, s)
+
+
+# --- Parquet-only PoC (ADR-024): `netanomaly poc <stage> --config poc.yaml` ---------------------------------------
+
+def _poc_config(args: argparse.Namespace):
+    from netanomaly.poc.config import load_poc_config
+
+    overrides = {"work_dir": args.work_dir} if getattr(args, "work_dir", None) else None
+    return load_poc_config(Path(args.poc_config), overrides)
+
+
+def cmd_poc(args: argparse.Namespace, s: Settings) -> None:
+    from netanomaly.poc import experiment as exp
+    from netanomaly.poc.config import BandSettings
+
+    cfg = _poc_config(args)
+    stage = args.poc_stage
+    if stage == "profile":
+        log.info("profile -> %s", exp.run_profile(cfg))
+        return
+    if stage == "experiment":
+        log.info("report -> %s", exp.run_experiment(cfg, rebuild_features=args.rebuild_features))
+        return
+    ctx = exp.open_context(cfg, rebuild_features=getattr(args, "rebuild_features", False))
+    log.info("experiment id %s -> %s", ctx.experiment_id, ctx.exp_dir)
+    if stage == "features":
+        log.info("feature table %s: %d rows, features %s -> %s", ctx.table.key, ctx.table.rows, ctx.table.features,
+                 ctx.table.path)
+    elif stage == "train":
+        exp.train_models(ctx)
+    elif stage == "score":
+        exp.score_models(ctx)
+        exp.robustness(ctx)
+    elif stage == "report":
+        bands = None
+        if args.bands:
+            import yaml
+
+            bands = BandSettings.model_validate(yaml.safe_load(Path(args.bands).read_text(encoding="utf-8")))
+        log.info("report -> %s", exp.finalize(ctx, bands))
+    elif stage == "search":
+        log.info("search -> %s", exp.run_search(ctx))
+
+
+def add_poc_parser(sub: argparse._SubParsersAction) -> None:
+    poc = sub.add_parser("poc", help="Parquet-only PoC: profile, features, IF/OCSVM, bands, report (ADR-024)")
+    stages = poc.add_subparsers(dest="poc_stage", required=True)
+    helps = {"profile": "inspect the external Parquet (files, schema, mapping, nulls, span, cardinalities)",
+             "features": "build/reuse the host x window feature table",
+             "train": "fit Isolation Forest / One-Class SVM on the training period",
+             "score": "score every window with the trained models (+ seed/contamination robustness fits)",
+             "report": "calibrate bands, write tables, diagnostics, charts and report.md",
+             "experiment": "features -> train -> score -> report in one go",
+             "search": "compare configured parameter candidates on the validation period"}
+    for name, text in helps.items():
+        p = stages.add_parser(name, help=text)
+        p.add_argument("--config", dest="poc_config", required=True, help="PoC YAML config (see poc.example.yaml)")
+        p.add_argument("--work-dir", help="override work_dir (must be outside the repository for real data)")
+        if name in ("features", "experiment", "train", "search"):
+            p.add_argument("--rebuild-features", action="store_true", help="recompute the cached feature table")
+        if name == "report":
+            p.add_argument("--bands", help="YAML with band settings (re-band without retraining)")
+    poc.set_defaults(func=cmd_poc)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -261,6 +327,7 @@ def build_parser() -> argparse.ArgumentParser:
     e = sub.add_parser("evaluate", help="recall@K against injected attacks (synthetic data only)")
     e.add_argument("--k", type=int, nargs="+", default=[50, 100, 500])
     e.set_defaults(func=cmd_evaluate)
+    add_poc_parser(sub)
     return p
 
 

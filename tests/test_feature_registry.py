@@ -19,6 +19,7 @@ from netanomaly.feature_registry import (
     to_markdown,
     usable_features,
 )
+from netanomaly.poc.featureset import features_document
 from netanomaly.schema import Confidence, Contract
 
 
@@ -42,7 +43,8 @@ def _with_column(contract: Contract, name: str, **update) -> Contract:
 
 def test_features_md_is_generated_from_registry(registry, contract):
     features_md = Path(__file__).parent.parent / "FEATURES.md"
-    assert features_md.read_text(encoding="utf-8") == to_markdown(registry, contract), "run: uv run netanomaly feature-doc"
+    expected = features_document(to_markdown(registry, contract))
+    assert features_md.read_text(encoding="utf-8") == expected, "run: uv run netanomaly feature-doc"
 
 
 def test_implemented_features_match_the_pipeline(registry):
