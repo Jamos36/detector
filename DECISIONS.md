@@ -34,6 +34,7 @@ Revisit when: real data with persistent hosts is available (then inject attacks 
 ## ADR-007: Alert budgets, not severity tiers; scores are rankings
 Decision: select top-K per day; no Critical/High/Medium labels; never call scores confidence/probability.
 Reason: unlabeled data; operational meaning of score levels is unknown.
+Status: superseded in part by ADR-027 for the PoC (rank bands named Critical…Low; the rest still holds).
 
 ## ADR-008: Temporal model only if evaluation justifies it
 Decision: no CNN/TCN until V4 shows Isolation Forest misses temporal patterns; if built, train independently of IF.
@@ -275,4 +276,103 @@ copy): seed overlap 0.92, rho 0.987.
 Consequences: the default `train_sample_rows` (200,000) is far past the plateau; top-K membership of a single model
 is noticeably seed-dependent, so V4 should report recall@K across seeds and consider more trees or seed averaging.
 Revisit when: V4 evaluates recall across seeds, or the model or its inputs change.
+
+## ADR-024: Scope change — a Parquet-only proof of concept for exploring a year of flows around pentest dates
+Decision (owner request, 2026-09-28): the active workflow is the PoC in `src/netanomaly/poc/` (`netanomaly poc
+profile|features|train|score|report|experiment|search`): profile external Parquet, build host x window features,
+fit Isolation Forest and One-Class SVM on a chosen chronological baseline, score later/held-out periods, calibrate
+review bands, and produce a visual report that compares rankings with broad pentest date ranges. The V0–V3 lake
+pipeline (CSV/Parquet ingest, synthetic generator and injected attacks, truth files, prior-history features, feature
+cards, stability) stays in the repository, working and tested, but is legacy: not called by the PoC and not
+extended. The V4–V8 roadmap is superseded by the PoC task list in TODO.md.
+Reason: the goal changed from building a validated detector step by step on synthetic attacks to getting a first,
+inspectable set of candidate periods and hosts from real Parquet with broad, weak annotations. Synthetic attacks
+say nothing about that data (ADR-012), so the PoC path must not depend on them.
+Consequences: no synthetic generator, injected attacks or truth files in the PoC path (enforced by a source-scan
+test); legacy ADRs 010–023 describe the legacy path only. Deletion of legacy code was not needed and was not done.
+Revisit when: the PoC's results justify productionising it, or the legacy path is no longer worth its tests.
+
+## ADR-025: Read external Parquet in place through an explicit field mapping; keep the data boundary
+Decision: the PoC reads only Parquet (magic bytes checked; CSV is not supported) from paths given in a config, via
+DuckDB `read_parquet(union_by_name, filename, file_row_number)`, and never copies flows into a lake. Canonical fields
+(`flow_start`, `src_ip` required; `flow_end`, `dst_ip`, `dst_port`, `protocol`, `bytes`, `packets` optional) are
+mapped from source columns by `input.field_map`, defaulting to the netflow_v1 contract's raw names. Every field is
+type-checked and reported (ok / missing / incompatible) with its conversion; unmapped source columns are listed
+and never modelled; timestamps follow ADR-015 (offset-free = assumed UTC, recorded), integer epochs need an explicit
+unit. Traceability = (`src_ip`, window) -> `source_file` + 0-based `source_row_index`. Inputs, `work_dir` and the
+DuckDB spill directory inside the repository are refused unless `allow_inside_repo: true`, which asserts the data is
+mock/synthetic.
+Reason: a year of flows should not be duplicated; field meanings are unvalidated (0/42), so the mapping must be an
+explicit, reviewable choice; ADR-012 must be enforced by code, not only by documentation.
+Consequences: every stage rescans the source for aggregates (the feature table is cached by input fingerprint +
+mapping + window + definitions); the fingerprint is paths + sizes + mtimes, not a content hash. ADR-012 and ADR-009
+are unchanged: this checkout still holds no real data or real-data artifacts.
+Revisit when: exporter documentation validates field meanings, or source files are rewritten in place (then use
+content hashes).
+
+## ADR-026: Pentest dates are weak interval annotations; evaluation is chronological and label-free
+Decision: supplied ranges (`annotations:` YAML with name, start, end, source, notes, optional confidence; date ends
+inclusive) only categorise windows as inside / buffer (± `annotation_buffer_hours`) / outside, for charts and
+descriptive comparisons (shares of review-band and daily top-k windows vs base shares, and their sensitivity to the
+buffer). They are never training labels. The optional `split.exclude_annotated_from_train` only removes annotated
+windows from the baseline. Periods are explicit chronological train / validation / test date ranges (or fractions of
+days in time order), never a random row split; learned transforms (imputer, scaler), feature screening and the
+models see training rows only; validation calibrates bands; test is scored as a later "deployment" period. A
+training period that overlaps a range raises a warning, and contamination variants (with/without annotated
+windows, trimmed refit) are reported. No accuracy/precision/recall/FPR is reported.
+Reason: the ranges are broad and incomplete, so treating them as labels would be wrong in both directions;
+leakage would make any comparison meaningless; a baseline can contain attacks (Kamiguchi & Nishio, RESEARCH.md).
+Consequences: results are descriptive; the report says that looking at test results and changing settings makes
+later test figures optimistic.
+Revisit when: precise, independent labels (tester source IPs and times) become available — then recall@K and
+per-engagement hit lists become valid.
+
+## ADR-027: Review bands Critical / High / Medium / Low / Benign are rank bands (supersedes ADR-007 in part)
+Decision: per model, band cutoffs are raw-score thresholds at quantiles of the reference period's scores
+(validation by default; `quantile` mode, default 0.999 / 0.995 / 0.99 / 0.975) or at quantiles derived from a daily
+alert budget (`budget` mode: q = 1 - budget / reference windows per day). Below Low is `below_label` (default
+"Benign") = below the review threshold, not safe. `score_pct` = share of reference windows scoring at or below.
+Bands can be recalibrated without retraining (`poc report --bands FILE`), which reuses the experiment id and appends
+a `band_revisions` entry to the manifest. ADR-007's "no Critical/High/Medium labels" is superseded for the PoC; its
+substance stays: scores are rankings, the tiers are alert-volume bands, never probabilities or severities, and every
+report says so.
+Reason: the owner asked for operational bands; deriving them from a reference quantile or budget keeps them honest
+about what they are.
+Revisit when: labelled outcomes allow real calibration.
+
+## ADR-028: Two independent baselines — Isolation Forest and One-Class SVM — behind one scoring contract
+Decision: each model is a scikit-learn Pipeline: stateless log1p on heavy-tailed features -> median imputer ->
+scaler (IF: none, OCSVM: standard; configurable) -> estimator, fitted on a bounded, day-spread hash sample of the
+training windows (IF 200k, OCSVM 20k rows by default; OCSVM refuses more than `hard_max_train_rows`; a matrix-size
+guard refuses oversized fits with an estimate). `raw = -score_samples(x)` for both, so higher = more anomalous;
+`contamination` and `nu` are modelling settings and never feed the bands. Scoring streams Arrow batches. No
+ensemble: the report compares the models (Spearman, top-N Jaccard, daily top-k overlap, disagreements). A compact
+search compares user-listed parameter candidates on validation only and stores all of them; nothing is chosen
+automatically. Artifacts are joblib pipelines (ADR-014) written only to the external work directory.
+Finding: scikit-learn's Isolation Forest cannot extrapolate — a window far beyond the training range scores like the
+most extreme training windows (test `test_ocsvm_extrapolates_but_isolation_forest_cannot`). Every window therefore
+carries `beyond_train_range` (inputs outside the training min/max), and the report counts such windows that are not
+in any band.
+Reason: two model families with different notions of "unusual" give a useful first comparison; a single-model
+ranking would hide the IF extrapolation blind spot. Ensembling needs normalised scores and evidence of benefit.
+Revisit when: the comparison shows one model is consistently more useful, or a normalised ensemble is tested.
+
+## ADR-029: Host x window rows with window-local features only
+Decision: one row per `src_ip` x fixed UTC window (`window_minutes`, default 60, must divide a day). Twelve features
+from the window's own flows (counts, bytes/packets totals and ratios, distinct peers/ports, internal/protocol shares,
+mean duration), each computed only if its canonical sources are mapped, with documented NULL handling (FEATURES.md,
+generated from `poc/featureset.py`). No history, novelty, periodicity or peer-group features yet. IPs, ports and
+file names are trace columns, never numeric inputs.
+Reason: window-local features cannot leak across time and need no state; hourly host rows keep a year tractable and
+traceable. The legacy prior-history features (ADR-018–020) need a NULL policy and evaluation first.
+Consequences: slow, low-volume and periodic (beacon-like) activity is under-represented; stated in every report.
+Revisit when: the first real-data review shows which behaviours are missed.
+
+## ADR-030: matplotlib for a static Markdown + SVG report
+Decision: add `matplotlib` (the only new dependency) and write `report.md` with SVG (or PNG) charts from data that
+DuckDB has already aggregated (per day/week/window bucket, histogram bins, bounded hash samples). No dashboard
+framework, no browser-side raw points.
+Reason: the report is the main product and must be readable offline and attachable; the project had no plotting
+stack; hand-written SVG would be more code to maintain.
+Revisit when: interactive exploration is needed beyond static charts.
 

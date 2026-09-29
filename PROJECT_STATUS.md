@@ -3,11 +3,63 @@
 _Last updated: 2026-09-28_
 
 ## Current milestone
+**Parquet-only PoC (ADR-024…030): implemented and tested on fixtures and the committed synthetic demo data; not yet
+run on real data.** Scope changed on 2026-09-28 from the V0–V8 roadmap to a focused proof of concept: explore about a
+year of NetFlow Parquet, rank unusual host-windows with Isolation Forest and One-Class SVM trained on a chosen
+chronological baseline, and compare the rankings with broad pentest date ranges in a visual report. The V0–V3
+lake pipeline remains working and tested but is legacy (its status is archived below).
+
+## PoC — implemented (commit 7ac7dc2 on `feat/v3-1-time-split`)
+- `src/netanomaly/poc/` + `netanomaly poc profile|features|train|score|report|experiment|search --config <yaml>`
+  (`poc.example.yaml`, `annotations.example.yaml`). Design: ARCHITECTURE.md (PoC part); decisions ADR-024…030;
+  paper influence RESEARCH.md; features FEATURES.md (generated).
+- Parquet read in place with an explicit, type-checked field mapping (contract raw names by default), traceability
+  to source file + 0-based row; refuses in-repo inputs, work dir or spill dir unless `allow_inside_repo: true`.
+- Host x window features (12, window-local), chronological train/validation/test (explicit dates or fractions),
+  train-only imputer/scaler/screening, bounded day-spread training samples, memory guards; IF and OCSVM pipelines
+  with raw = -score_samples (higher = more anomalous); bands from validation quantiles or a daily budget,
+  re-bandable without retraining; weak annotations inside/buffer/outside with buffer sensitivity; seed stability,
+  contamination variants (with/without annotated windows, trimmed refit), training-host concentration, drift (PSI),
+  IF-vs-OCSVM agreement; `beyond_train_range` flag; Parquet outputs, manifest, Markdown + SVG/PNG report.
+- Finding while building: scikit-learn's Isolation Forest cannot extrapolate beyond the training range (a held-out
+  200-port sweep ranks first for OCSVM, not for IF; test-pinned). Hence the flag and the side-by-side comparison.
+- Code review (python-reviewer agent): no CRITICAL/HIGH; the one MEDIUM (unverified joblib loading) fixed with a
+  sha256 check before unpickling.
+
+## PoC — data availability and runs
+- **No real data was available to this process** (no Parquet outside the repo, no `NETANOMALY_*` variables). No
+  real-data run has happened; nothing here says anything about detection on the target network.
+- Tests use tiny Parquet fixtures in pytest's temp dir (8 days x 8 hosts + one port sweep).
+- Demo run (scratch, not committed; `allow_inside_repo: true`) on the committed synthetic raw Parquet
+  `data/synth/raw` (6 days, 300 hosts, 388,749 flows; 15-min windows -> 118,584 rows; train 09-01..03, validation
+  09-04, test 09-05..06; a made-up 2-day annotation): profile + experiment + search ~30 s on this laptop. Both models
+  put the synthetic port/host scans at the top of the candidate list (with traces to the right source rows); IF vs
+  OCSVM Spearman ~0.60, top-200 Jaccard 0.13–0.17 (they disagree a lot); seed stability top-200 Jaccard IF 0.71,
+  OCSVM 0.83. These are synthetic, self-designed attacks: a pipeline check, not evidence of performance.
+
+## PoC — open questions / assumptions to resolve with the data owner
+- Actual Parquet column names/types and exporter semantics (direction of bytes/packets, timestamp zone, flow
+  timeouts, sampling) — `poc profile` output + `input.field_map`; contract remains 0/42 validated.
+- Which months are a plausible clean baseline, and the precise pentest ranges (tester IPs would allow real
+  per-engagement checks).
+- Scale of a real year (rows, hosts, windows): memory/time not yet measured; `profile` estimates feature rows.
+
+## PoC — next concrete step
+In the authorised data environment (not in this checkout): run `netanomaly poc profile` on the real Parquet, fix
+`input.field_map` / `input.epoch_unit` from its mapping table, choose a likely-clean training period and enter the
+pentest ranges, then run `netanomaly poc experiment` and review the report with the data owner (which top
+candidates are explainable,
+which pentest ranges stand out, where IF and OCSVM disagree). Record the run outside the repo; bring back only
+code changes and non-sensitive conclusions.
+
+# Legacy lake pipeline (V0–V3) — archived status
+The sections below describe the legacy path as of 2026-09-28 and are kept for reference. Their "next task" (V4) is
+superseded by ADR-024.
+
 V0 — Prototype: **complete**. V1 — Ingestion and Data Quality: **implementation complete** (V1-1 … V1-5
 implemented and tested on mock/synthetic data). **Real-exporter semantic validation: pending** — an external
 prerequisite for real-data use, not a V1 task (see below). V2 — Feature research: **implementation complete** (V2-1 … V2-5 done on mock/synthetic data). V3 — Isolation
 Forest: **implementation complete** (V3-1 time split + registry inputs, V3-2 stability; mock/synthetic data only).
-V4 not started.
 
 ## Real-data onboarding — external prerequisite (pending)
 - Exporter/collector documentation is needed to validate field meanings before any real-data use. It cannot be
@@ -220,7 +272,7 @@ Synthetic results below are diagnostics on self-designed data, **not real-world 
 - Code review: 2 CRITICAL + 2 HIGH findings fixed with regression tests.
 
 ## Tests
-216 passing, 0 failing (21 new for V3: 16 in `tests/test_model_split.py`, 5 in `tests/test_stability.py`; 22 new for V2-5: 21 in `tests/test_feature_cards.py`, 1 in `tests/test_synth_pipeline.py`; 14 new for V2-4: 13 in `tests/test_timing.py`, 1 in `tests/test_synth_pipeline.py`; 14 for V2-3: 13 in `tests/test_novelty.py`, 1 in `tests/test_synth_pipeline.py`; 15 new for V2-2: 14 in `tests/test_baselines.py`, 1 in `tests/test_synth_pipeline.py`; 22 for V2-1: 21 in `tests/test_feature_registry.py`, 1 lake check in
+257 passing, 0 failing (41 new for the PoC: 28 in `tests/test_poc_units.py`, 13 in `tests/test_poc_pipeline.py`; legacy counts: 21 new for V3: 16 in `tests/test_model_split.py`, 5 in `tests/test_stability.py`; 22 new for V2-5: 21 in `tests/test_feature_cards.py`, 1 in `tests/test_synth_pipeline.py`; 14 new for V2-4: 13 in `tests/test_timing.py`, 1 in `tests/test_synth_pipeline.py`; 14 for V2-3: 13 in `tests/test_novelty.py`, 1 in `tests/test_synth_pipeline.py`; 15 new for V2-2: 14 in `tests/test_baselines.py`, 1 in `tests/test_synth_pipeline.py`; 22 for V2-1: 21 in `tests/test_feature_registry.py`, 1 lake check in
 `tests/test_synth_pipeline.py`; 46 in `tests/test_timestamps.py`; 3 are tiny-scale smoke tests of `scripts/memtest.py`; the 20M-row run is manual). ruff: 3 pre-existing ISC004 findings in `schema.py` (rule new in
 ruff 0.16.9; present on HEAD before V1-1); all other files clean.
 
@@ -313,10 +365,7 @@ ruff 0.16.9; present on HEAD before V1-1); all other files clean.
   and would only add `rejected_rows` to the ledger.
 
 ## Important decisions
-See `DECISIONS.md` (ADR-001 … ADR-023).
+See `DECISIONS.md` (ADR-001 … ADR-030; ADR-024…030 cover the PoC).
 
-## Next task
-V4 (not started) — evaluation: attack intensity sweeps; recall@K 50/100/500 across seeds (ADR-023: single-model
-top-100 membership is seed-dependent); robust-z and rule baselines; decide whether prior-history features
-(`bytes_out_robust_z`, novelty, `interarrival_cv`) become model inputs, with a NULL policy. Mock/synthetic data only.
-Real-exporter semantic validation remains an external prerequisite.
+## Next task (legacy, superseded)
+V4 evaluation of the legacy pipeline is superseded by ADR-024; see the PoC next step at the top of this file.

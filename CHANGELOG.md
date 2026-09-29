@@ -1,6 +1,18 @@
 # Changelog
 
 ## Unreleased
+- feat (PoC, ADR-024…030): scope refactor to a Parquet-only proof of concept, `netanomaly poc
+  profile|features|train|score|report|experiment|search --config <yaml>` (`src/netanomaly/poc/`). Reads external
+  Parquet in place through an explicit, type-checked field mapping with source-file/row traceability; host x window
+  features (12, window-local, generated FEATURES.md); chronological train/validation/test with train-only learned
+  transforms; Isolation Forest and One-Class SVM with one score contract (higher = more anomalous); Critical / High /
+  Medium / Low / Benign review bands from validation quantiles or a daily budget, re-bandable without retraining;
+  pentest ranges as weak inside/buffer/outside annotations; label-free diagnostics (distributions, volume vs cutoff,
+  concentration, annotation overlap + buffer sensitivity, model agreement, seed stability, contamination variants,
+  drift); `beyond_train_range` flag after finding that Isolation Forest cannot extrapolate; Parquet outputs,
+  manifest and a Markdown + SVG report. Refuses in-repo inputs/outputs (ADR-012). New dependency: matplotlib.
+  RESEARCH.md records what was taken from five papers and one code repository. The V0–V3 lake pipeline is kept,
+  working and tested, as legacy; the V4–V8 roadmap is superseded (TODO.md archive). 41 new tests.
 - feat (V3-2): `netanomaly stability` → `outputs/stability/stability.{json,md}` (ADR-023). Label-free ranking
   agreement on the held-out score days: seed stability (45 pairs of 10 seeds) and a sample-size curve (5 seeds per size,
   500 … all training rows) against the mean of the seed models; Spearman rho (average ranks) and top-K overlap per day.
