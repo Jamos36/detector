@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+- refactor (ADR-031): removed all code, tests and generated data artifacts outside the proof of concept (lake
+  pipeline, synthetic generator, legacy features/models, memtest); kept mock/synthetic raw data and truth. Package
+  flattened (`netanomaly.poc` -> `netanomaly`); `uv run netanomaly` runs everything with the ready `config.yaml`
+  (demo data) and prints the report to open; single `memory_gb` / `threads` knobs derive the memory settings;
+  report also as `report.html` (new dependency `markdown`); `run.bat` / `run.sh`; README rewritten as a
+  step-by-step guide. 43 tests.
 - feat (PoC, ADR-024…030): scope refactor to a Parquet-only proof of concept, `netanomaly poc
   profile|features|train|score|report|experiment|search --config <yaml>` (`src/netanomaly/poc/`). Reads external
   Parquet in place through an explicit, type-checked field mapping with source-file/row traceability; host x window

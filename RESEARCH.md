@@ -80,6 +80,11 @@ Paper: <https://arxiv.org/abs/2607.20011>
 scikit-learn's `IsolationForest` cannot extrapolate: split thresholds are drawn inside the training range, so a
 window whose values lie far beyond everything in the training period is scored like the most extreme *training*
 windows, and can rank below sparse-but-in-range windows. A test pins this down
-(`tests/test_poc_units.py::test_ocsvm_extrapolates_but_isolation_forest_cannot`): a held-out 200-port sweep ranks
+(`tests/test_units.py::test_ocsvm_extrapolates_but_isolation_forest_cannot`): a held-out 200-port sweep ranks
 first for the RBF One-Class SVM but not for the Isolation Forest. The PoC therefore reports both models side by side
 and adds a `beyond_train_range` column (inputs outside the training min/max) to every scored window.
+
+The bundled demo shows the same effect at scale: with the default `config.yaml` (2 training days), the One-Class SVM
+ranks all 15 injected synthetic attacks within its top 37 review windows, while the Isolation Forest ranks 7 of them
+below 400 (PROJECT_STATUS.md). Synthetic attacks are self-designed, so this is a property of the models, not a
+performance estimate.

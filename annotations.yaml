@@ -1,0 +1,16 @@
+# Pentest (or other known-activity) date ranges, drawn on the charts and compared with the rankings.
+# They are CONTEXT ONLY: never used to train the models and never treated as proof of an attack.
+#
+# Dates are UTC. A plain date means the whole day (a date `end` includes that day); a date-time such as
+# 2026-09-05T08:00:00Z is exact (and a date-time `end` is excluded).
+#
+# DEMO VALUE: the synthetic dataset (data/synth/raw) has injected attacks on 2026-09-04..06
+# (listed in data/synth/truth/injections.csv). Replace or delete this entry for other data.
+
+intervals:
+  - name: demo-injected-attack-days
+    start: 2026-09-04
+    end: 2026-09-06
+    source: "data/synth/truth/injections.csv (synthetic demo)"
+    notes: "scans, brute force, beaconing and exfiltration were injected on these days"
+    confidence: high

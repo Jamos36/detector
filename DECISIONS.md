@@ -2,6 +2,9 @@
 
 Settled decisions and why. Reopen one only when its "revisit when" condition occurs.
 
+**Current decisions: ADR-012, ADR-014, ADR-015 and ADR-024 … ADR-031.** ADR-001 … ADR-023 (except 012, 014, 015)
+describe the removed V0–V3 lake pipeline and are kept only as history (ADR-031).
+
 ## ADR-001: DuckDB over Parquet for all scans and aggregation
 Decision: DuckDB computes normalization, features, sampling and joins directly on Parquet; Python sees bounded batches.
 Reason: data will exceed free RAM (~2–3 GB free on the dev machine); CPU only.
@@ -376,3 +379,21 @@ Reason: the report is the main product and must be readable offline and attachab
 stack; hand-written SVG would be more code to maintain.
 Revisit when: interactive exploration is needed beyond static charts.
 
+## ADR-031: Remove everything outside the proof of concept; one-command run with one memory knob
+Decision (owner, 2026-09-28): the owner will not receive real data and does not need anything but the PoC. Removed:
+the V0–V3 lake pipeline code (ingest, DQ report, synthetic generator and injection, labels, legacy features,
+baselines, novelty, timing, feature registry and cards, legacy Isolation Forest, stability, alerts), its tests, the
+memory-test script, and its generated artifacts under `data/` (lakes, feature tables, models, outputs). Kept:
+the mock data (`data/raw`), the synthetic data and its truth file (`data/synth/raw`, `data/synth/truth`), and the
+modules the PoC uses (`db`, `timestamps`, `schema` + the netflow_v1 contract as column dictionary and default
+mapping). The PoC package moved from `netanomaly.poc` to `netanomaly`; the CLI is `uv run netanomaly [command]`
+(default `run`) with `config.yaml` in the repository pointing at the synthetic demo data (`allow_inside_repo: true`)
+and outputs in git-ignored `outputs/`. Memory is set by `memory_gb` (+ `threads`), which derives DuckDB's limit,
+training-sample sizes, the matrix guard and the batch size unless set explicitly. The report is also written as
+`report.html`; `run.bat` / `run.sh` wrap install + run.
+Reason: a non-developer owner must be able to run and adjust it; unused code and artifacts only add confusion.
+Consequences: ADR-012 still holds (no real data or real-data artifacts in the repo) and the in-repo guard stays.
+The removed code is recoverable from git history (commit 78f2d31 and earlier). New dependency: `markdown` (HTML
+report). Supersedes the parts of ADR-024/025 that kept the legacy pipeline and the example-config workflow.
+Revisit when: real data becomes available (then move the data and `work_dir` in `config.yaml` outside the
+repository).

@@ -1,60 +1,59 @@
-# Pipeline configuration. Relative paths are resolved against this file's folder.
-# Sized for a CPU-only machine with little free RAM: DuckDB spills to disk
-# beyond memory_limit, and Python holds at most `batch_rows` rows at a time.
+# =====================================================================================================
+#  netanomaly settings. Run everything with:   uv run netanomaly        (or double-click run.bat)
+#  Afterwards open:  outputs/experiments/<id>/report.html  (the command prints the exact path)
+# =====================================================================================================
 
-paths:
-  raw: data/raw
-  lake: data/lake
-  features: data/features
-  models: data/models
-  outputs: data/outputs
-  quarantine: data/quarantine
+# ---- 1. MEMORY AND CPU  (the usual things to change) ------------------------------------------------
+# How much RAM the run may use, in GB. If it crashes with "out of memory", lower it; if you have more
+# free RAM and it is slow, raise it. It sets DuckDB's memory limit (half of it), the size of the model
+# training samples and the scoring batch size. (Advanced: any of those can still be set explicitly
+# further down; an explicit value always wins.)
+memory_gb: 4
+threads: 4                       # CPU cores to use
 
-duckdb:
-  memory_limit: 2GB        # raise if more RAM is free; DuckDB spills past this
-  threads: 4               # each thread adds working memory
-  temp_directory: data/tmp/duckdb
+# ---- 2. WHICH DATA ----------------------------------------------------------------------------------
+input:
+  # Folder(s), file(s) or glob(s) of Parquet files. Two datasets ship with the repo:
+  #   data/synth/raw  synthetic, 6 days, 300 hosts, with injected attacks   <- default, best demo
+  #   data/raw        mock, 6 days, ~58,000 random IPs (almost no host repeats: weak for per-host models)
+  paths: ["data/synth/raw"]
+  field_map: {}                  # only needed if your column names differ, e.g.  src_ip: source_address
+  epoch_unit: {}                 # only needed if a timestamp column is an integer, e.g.  flow_start: ms
+allow_inside_repo: true          # the demo data lives inside this repository (it is mock/synthetic)
+work_dir: outputs                # where results go (git-ignored)
 
-ingest:
-  max_reject_fraction: 0.05  # above this share of bad rows, quarantine the whole file
+# ---- 3. TIME SPLIT  (UTC dates; start inclusive, end exclusive) ---------------------------------------
+split:
+  train:      {start: 2026-09-01, end: 2026-09-03}   # what "normal" looks like
+  validation: {start: 2026-09-03, end: 2026-09-04}   # sets the alert-band cutoffs
+  test:       {start: 2026-09-04, end: 2026-09-07}   # the later period being checked
+  exclude_annotated_from_train: false
 
-dq:                          # data-quality report (netanomaly dq)
-  trailing_days: 7           # daily volume vs median of this many strictly earlier days
-  min_history_days: 3
-  volume_ratio_low: 0.5      # flag a day below 0.5x / above 2x the trailing median
-  volume_ratio_high: 2.0
+# ---- 4. PENTEST DATE RANGES (context only, never used as labels) ------------------------------------
+annotations: annotations.yaml
+annotation_buffer_hours: 12      # windows this close to a range count as "uncertain"
 
-baseline:                    # host baselines (netanomaly baselines, V2-2)
-  lookback_days: 7           # day D is compared with the 7 whole UTC days before it; never day D itself
-  min_windows: 30            # a level (host, peer subnet, global) needs >= 30 prior windows ...
-  min_days: 2                # ... on >= 2 distinct days, and MAD > 0; otherwise fall back to the next level
-  min_peer_hosts: 5          # peer and global levels also need >= 5 distinct hosts
-
-timing:                      # timing regularity (netanomaly timing, V2-4)
-  history_hours: 2           # a window starting at W uses flows in [W - 2 h, W); never W itself or later
-  min_events: 10             # a (host, destination) series needs >= 10 distinct flow_start instants (9 gaps)
-
-feature_cards:               # per-feature diagnostics (netanomaly feature-cards, V2-5)
-  warmup_days: 2             # PSI reference = lake days [2, 2 + reference_days) by position: skips baseline warm-up
-  reference_days: 1
-  psi_bins: 10               # reference-quantile bins + one NULL bin
-  redundancy_threshold: 0.9  # |Spearman rho| >= 0.9 between two features is flagged as redundant
-
-batch_rows: 50000          # rows per Arrow batch when scoring
-window_minutes: 5
-alert_budget_per_day: 100  # top-K host-windows per day, not a severity threshold
-
-split:                       # time-based train/score split (V3, ADR-022)
-  train_fraction: 0.5        # first floor(n_days * 0.5) UTC days train; only later days are scored
-
-model:
-  train_sample_rows: 200000  # hash sample of the training days; all of them if fewer
-  n_estimators: 200
-  max_samples: 256
+# ---- 5. MODEL DETAIL  (fine to leave alone) ----------------------------------------------------------
+name: demo                       # prefix of the experiment folder name
+window_minutes: 15               # one row per host per 15 minutes (must divide 1440)
+features:
+  include: null                  # null = all features (see FEATURES.md)
+  exclude: []
+models:
   seed: 42
-  n_jobs: 2
-
-stability:                   # netanomaly stability (V3): label-free ranking agreement on the held-out score days
-  seeds: 10                  # models with seeds seed..seed+9 on the full training sample; their mean = reference
-  sample_sizes: [500, 1000, 2000, 5000, 10000, 20000, 50000]  # plus all training rows; capped at the rows available
-  curve_seeds: 5             # models per sample size, seeds disjoint from the reference
+  iforest: {n_estimators: 200, max_samples: 256}
+  ocsvm: {nu: 0.05, gamma: scale}
+bands:                           # review bands: rank buckets, not probabilities or severities
+  reference: validation
+  mode: quantile                 # or: budget (then set budget_per_day)
+  quantiles: {Critical: 0.999, High: 0.995, Medium: 0.99, Low: 0.975}
+  budget_per_day: {Critical: 2, High: 10, Medium: 25, Low: 60}
+  below_label: Benign            # = below the review threshold, not "proven safe"
+diagnostics:
+  seed_repeats: 2
+  buffer_hours_sensitivity: [0, 12, 48]
+report:
+  chart_format: svg              # svg or png
+search:                          # used only by `uv run netanomaly search`
+  iforest: [{n_estimators: 100}, {max_samples: 1024}]
+  ocsvm: [{nu: 0.01}, {gamma: 0.1}]

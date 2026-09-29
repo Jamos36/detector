@@ -1,13 +1,14 @@
 [project]
 name = "netanomaly"
 version = "0.1.0"
-description = "Unlabeled NetFlow anomaly detection: DuckDB + Parquet + Isolation Forest"
+description = "NetFlow Parquet anomaly ranking proof of concept: DuckDB + Isolation Forest + One-Class SVM + HTML report"
 authors = [
     { name = "Jamos36", email = "ja40maya@gmail.com" }
 ]
 requires-python = ">=3.13"
 dependencies = [
     "duckdb>=1.5.5",
+    "markdown>=3.8",
     "matplotlib>=3.10",
     "numpy>=2.5.3",
     "pyarrow>=25.0.1",
