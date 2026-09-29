@@ -397,3 +397,53 @@ The removed code is recoverable from git history (commit 78f2d31 and earlier). N
 report). Supersedes the parts of ADR-024/025 that kept the legacy pipeline and the example-config workflow.
 Revisit when: real data becomes available (then move the data and `work_dir` in `config.yaml` outside the
 repository).
+
+## ADR-032: Frozen model bundle; the test period is scored once, by the bundle; new data only through a bundle
+Decision (owner request, 2026-09-28): make the two uses explicit. (A) Historical year: the development experiment
+fits on `split.train`, calibrates bands on `split.validation`, and never scores, plots or summarises the test period
+(robustness variants moved from test to validation); `finalize` freezes everything learned into a model bundle
+(`<work_dir>/bundles/<experiment id>-b<hash>`: pipelines, ordered model inputs, field mapping and required fields,
+window, periods incl. the reserved test range, model settings + sha256, band settings, validation cutoffs and
+percentile grids, training min/max/median/scale and per-host context, versions, commit, config, relationship state).
+`netanomaly test` (and the default `run`) then scores the test period with that bundle; every such run is logged in
+`holdout_ledger.json` and labelled *first*, *repeat* (same bundle and data) or *reused* (another bundle already
+saw this test period: a new experiment, optimistic). (B) `netanomaly score-new --bundle --input` scores any new
+Parquet with a bundle: field contract checked first (same source columns, usable types, computable inputs), no
+fitting or tuning, outputs in `<work_dir>/scoring/new-data-...` with `run.json`; reports name the bundle and period.
+Also: with `allow_inside_repo: true`, input from outside the checkout may not write inside it (checked before any
+file, including DuckDB's spill folder, is created); `config.real.example.yaml` is the safe real-data template.
+Reason: a `score` command that rescored the development experiment could not show that results on the test period
+or on new data came from settings frozen beforehand, and the one-report layout mixed training diagnostics with
+test results.
+Consequences: POC_VERSION 2 (new experiment ids; models and training/validation scores are unchanged). The bundle
+is a joblib pickle (ADR-014): only load bundles you produced. Bundles, per-host context and relationship state
+contain IPs derived from the data: they stay outside the repository like the data. Supersedes ADR-031's assumption
+that no real data will arrive: real data is expected, outside the repository only.
+Revisit when: models need to be refitted periodically (a separately named adaptation mode, not implemented).
+
+## ADR-033: Optional source -> destination behaviour tracking, past-only, report-only by default
+Decision (owner request, 2026-09-28): `relationships.py` builds a sparse directed pair x window table ((src, dst), or
+(src, dst, dst_port, protocol) with `group_by_port_protocol`) in DuckDB and derives, from strictly earlier windows
+of the same pair: *never seen* (no earlier window since the history start; `warmup` during the first `warmup_days`),
+*recently unseen* (seen before, last seen more than `recent_lookback_days` earlier; a contact exactly at the lookback
+counts as recent) and *frequency change* (log2((flows+1)/(median+1)) against the pair's own active windows within
+`baseline_lookback_days`, judged only with `min_support_windows`; `insufficient_history` otherwise). Outputs: pair
+table, host-window summary, evidence with reasons, and a history state (per-pair first/last seen + the last
+`baseline_lookback_days` of pair-windows) that the bundle carries and scoring runs continue. `enabled` and
+`include_model_features` are separate: the demo enables the analysis report-only; the six `rel_*` host summaries
+become model inputs only when explicitly included (then a different experiment id).
+Reason: window-local features cannot see new peers, returning peers or changed contact volume; the median + log
+ratio is explainable and robust to zero-heavy pairs; a separate switch keeps model scores unchanged until the
+signals are reviewed on real data.
+Consequences: SQL window frames (`lag`, `RANGE ... PRECEDING AND CURRENT ROW EXCLUDE CURRENT ROW`) enforce past-only
+history (tested: adding future rows does not change earlier outputs; carried state reproduces a single pass). Only
+active windows are evaluated, so a pair that goes silent is not flagged. Scoring data that starts before the carried
+history ends is refused when the summaries are model inputs, and the report-only analysis is skipped with a warning
+otherwise. Defaults are a week (7 / 7 / 7 days, 4 windows, |log2| >= 2); the demo config uses 1 day for its 6 days.
+Revisit when: real data shows the default lookbacks or the pair cardinality (esp. with ports) need changing.
+
+## ADR-034: DuckDB 1.5.5 workaround: no min/max over the hive partition column
+Decision: aggregate `window_start` (cast to DATE) instead of `min/max(flow_date)` on hive-partitioned feature tables.
+Reason: `min(flow_date)` on a table with a single `flow_date=` partition raises an internal DuckDB error
+("Attempted to access index ... within vector"); counts and DISTINCT are unaffected.
+Revisit when: DuckDB is upgraded (then the workaround may be removed).

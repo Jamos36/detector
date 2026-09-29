@@ -115,6 +115,22 @@ def check_outside_repo(paths: list[Path], what: str, allow: bool) -> None:
             "`allow_inside_repo: true` only for mock/synthetic data.")
 
 
+def check_external_inputs(inputs: list[Path], outputs: list[Path], allow: bool) -> None:
+    """`allow_inside_repo: true` covers the bundled mock/synthetic data only. Input from OUTSIDE the checkout is
+    treated as possibly real, so its outputs, models and DuckDB spill files must be outside the checkout too."""
+    root = repo_root()
+    if root is None or not allow:
+        return
+    external = [p for p in inputs if not Path(p).resolve().is_relative_to(root)]
+    inside = [p for p in outputs if Path(p).resolve().is_relative_to(root)]
+    if external and inside:
+        raise SourceError(
+            f"input {external[0]} is outside the repository (possibly real data) but outputs would be written inside "
+            f"it ({inside[0]}). allow_inside_repo is for the bundled mock/synthetic data only (ADR-012): set "
+            "work_dir and duckdb.temp_directory to folders outside the repository and allow_inside_repo: false "
+            "(see config.real.example.yaml).")
+
+
 # --- discovery ---------------------------------------------------------------------------------------------------
 
 def resolve_files(patterns: list[str]) -> list[SourceFile]:

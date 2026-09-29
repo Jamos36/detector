@@ -24,3 +24,16 @@ Missing values: NULLs (and non-finite values) are imputed with the training-peri
 | `mean_duration_s` | flow_start, flow_end | `avg(duration_s)` | log1p | mean flow duration in seconds | no flow has flow_end >= flow_start |
 
 Known redundancy: `bytes_total`, `packets_total` and `max_flow_bytes` are strongly correlated in most traffic; keep or exclude them per experiment. Canonical field meanings are unvalidated (0/42 contract fields) - see SCHEMA.md.
+
+## Optional relationship summaries (`src/netanomaly/relationships.py`)
+
+Model inputs only when `relationship_analysis.include_model_features: true` (default false: report-only). Unlike the features above they use the host's history, but strictly earlier windows only (and, when scoring a model bundle, the history carried in the bundle). Raw IPs and pair keys are never model inputs.
+
+| feature | transform | meaning | NULL when |
+|---|---|---|---|
+| `rel_new_dst` | log1p | destinations the host contacts for the first time since history began (never seen before) | warm-up: less than `warmup_days` of history |
+| `rel_new_dst_share` | - | share of the window's destinations that are never seen before (0..1) | warm-up, or no destination in the window |
+| `rel_recently_unseen_dst` | log1p | destinations contacted before, but not within `recent_lookback_days` | never |
+| `rel_freq_increase` | log1p | pairs whose flow count is >= 2^threshold x their own recent median (enough support) | never |
+| `rel_freq_decrease` | log1p | pairs whose flow count is <= 2^-threshold x their own recent median (enough support) | never |
+| `rel_max_abs_log2_change` | - | largest |log2((flows+1)/(median+1))| among the window's pairs with enough support | no pair in the window has `min_support_windows` earlier active windows |

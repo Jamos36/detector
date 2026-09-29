@@ -209,7 +209,7 @@ def time_bucket(periods: list[Period]) -> tuple[str, timedelta]:
 
 
 def feature_drift(con: duckdb.DuckDBPyConnection, table: FeatureTable, features: list[str], train: Period,
-                  bucket: str = "week") -> list[dict]:
+                  bucket: str = "week", where: str = "TRUE") -> list[dict]:
     """PSI per day or week of each model input against the training distribution (decile bins of training values plus a
     NULL bin; shares floored at 1e-4). A drift indicator for the baseline, in the spirit of the drift gate of
     Sheela & Dey 2026: it says the traffic mix moved away from training, not that the change is malicious."""
@@ -225,7 +225,7 @@ def feature_drift(con: duckdb.DuckDBPyConnection, table: FeatureTable, features:
         q = f"greatest(coalesce(c.q, 0), {PSI_FLOOR})"
         got = con.execute(f"""
 WITH b AS (SELECT date_trunc('{bucket}', window_start)::DATE AS week, {train.where()} AS is_train,
-             {_bin_sql(f, sorted(set(edges)))} AS bin FROM {rel}),
+             {_bin_sql(f, sorted(set(edges)))} AS bin FROM {rel} WHERE {where}),
 ref AS (SELECT bin, count(*) / sum(count(*)) OVER () AS p FROM b WHERE is_train GROUP BY bin),
 cur AS (SELECT week, bin, count(*) / sum(count(*)) OVER (PARTITION BY week) AS q FROM b GROUP BY week, bin),
 grid AS (SELECT week, bin FROM (SELECT DISTINCT week FROM b) CROSS JOIN (SELECT DISTINCT bin FROM b))

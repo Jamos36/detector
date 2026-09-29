@@ -49,7 +49,7 @@ def _intervals(ctx) -> list[tuple]:
 
 
 def _periods(ctx) -> list[tuple]:
-    return [(p.name, p.start_dt, p.end_dt) for p in ctx.periods]
+    return [(p.name, p.start_dt, p.end_dt) for p in ctx.dev_periods]
 
 
 def _band_q(cutoffs: list[Cutoffs]) -> dict[str, dict[str, float]]:
@@ -77,6 +77,7 @@ def write_report(ctx, manifest: dict, cutoffs: list[Cutoffs], diagnostics: dict,
         _comparison(ctx, models, cutoffs, diagnostics, charts_dir),
         _annotation_section(ctx, diagnostics),
         _robustness(ctx, diagnostics, rob, charts_dir),
+        _relationships(ctx, charts_dir),
         _coverage(ctx, manifest),
         _limitations(ctx),
     ]
@@ -118,16 +119,22 @@ def _header(ctx, manifest: dict) -> str:
     per = {r["period"]: r for r in rows(ctx.con, f"SELECT period, count(*) AS windows, count(DISTINCT flow_date) AS "
                                                  f"days, count(DISTINCT src_ip) AS hosts FROM {rel} GROUP BY 1")}
     body = [[p.name, p.start, p.end, *[per.get(p.name, {}).get(k, 0) for k in ("windows", "days", "hosts")]]
+            if p.name != "test" else [p.name, p.start, p.end, "reserved: final test report", "-", "-"]
             for p in ctx.periods]
     if "unassigned" in per:
         u = per["unassigned"]
-        body.append(["unassigned (between/after periods)", "-", "-", u["windows"], u["days"], u["hosts"]])
+        body.append(["unassigned (before the test period)", "-", "-", u["windows"], u["days"], u["hosts"]])
     mock = ("\n\n> **Mock/synthetic input** (`allow_inside_repo: true`): results describe fixture or demo data, "
             "not any real network." if ctx.cfg.allow_inside_repo else "")
     code = manifest.get("code", {})
+    bundle = manifest.get("bundle", {})
     return "\n".join([
-        f"# Anomaly-ranking experiment `{ctx.experiment_id}`", "",
+        f"# Development report (training + validation): experiment `{ctx.experiment_id}`", "",
         DISCLAIMER.format(below=ctx.cfg.bands.below_label) + mock, "",
+        (f"> **Training diagnostics only.** This report covers the training and validation periods. The test period "
+         "is reserved: it is scored once, with the frozen model bundle "
+         f"`{bundle.get('bundle_id', '-')}`, in a separate *final test report* (`netanomaly test`)."), "",
+        f"- Model bundle: `{bundle.get('bundle_id', '-')}` -> `{bundle.get('path', '-')}`.",
         (f"- Generated: {manifest['updated_at']} (UTC). Code: {code.get('commit') or 'unknown'}"
         f"{' (src has uncommitted changes)' if code.get('src_dirty') else ''}."),
         (f"- Input: {manifest['input']['files']} Parquet files, {s['flows']:,} flows in {s['windows']:,} host x "
@@ -136,8 +143,19 @@ def _header(ctx, manifest: dict) -> str:
         (f"- Models: {', '.join(ctx.model_ids)}. Bands calibrated on: {manifest['bands']['reference']} "
         f"({manifest['bands']['settings']['mode']} mode)."), "",
         _table(["period", "UTC start", "UTC end (excl.)", "windows", "days with data", "hosts"], body),
-        "", ("Scores on the training period are in-sample (exploratory only); validation calibrates the bands; test "
-        "simulates later deployment."), "", "**Warnings**", "", "\n".join(f"- {w}" for w in ctx.warnings) or "- none"])
+        "", ("Scores on the training period are in-sample (exploratory only); validation calibrates the bands and is "
+        "where settings are compared (`netanomaly search`)."), "", "**Warnings**", "",
+        "\n".join(f"- {w}" for w in ctx.warnings) or "- none"])
+
+
+def _relationships(ctx, out: Path) -> str:
+    if ctx.relationships is None:
+        return ""
+    from netanomaly import relationship_report
+
+    return relationship_report.section("## 10. Source -> destination relationships", ctx.con, ctx.relationships,
+                                       ctx.cfg, _intervals(ctx), out, model_features=[
+                                           f for f in ctx.features if f.startswith("rel_")])
 
 
 def _overview(ctx, models: list[str], out: Path) -> str:
@@ -453,7 +471,7 @@ def _robustness(ctx, diagnostics: dict, rob: dict | None, out: Path) -> str:
 def _coverage(ctx, manifest: dict) -> str:
     m = manifest["field_mapping"]
     return "\n".join([
-        "## 10. Coverage, field mapping and data quality", "",
+        "## 11. Coverage, field mapping and data quality", "",
         _table(["canonical", "source column", "type", "status", "conversion", "note"],
                [[f["name"], f["source"], f["source_type"], f["status"], f["conversion"], f["note"]]
                 for f in m["fields"]]), "",
@@ -471,4 +489,4 @@ def _coverage(ctx, manifest: dict) -> str:
 
 
 def _limitations(ctx) -> str:
-    return "## 11. Limitations of this run\n\n- No reliable labels: nothing here measures detection quality. Pentest ranges are broad; overlap with them is descriptive.\n- A high rank means *unusual relative to the chosen training baseline*, which may be benign change (new services, backups, your own scanners) - and a baseline that contains attack-like activity can hide it.\n- Features describe one host and one window only (no history, no peer baselines, no periodicity), so slow, low-volume or beacon-like activity may rank low.\n- Field meanings are unvalidated (see mapping). Timestamps without offset were assumed UTC where noted.\n- Changing settings after looking at test results makes later test results optimistic.\n- Raw scores are only comparable within one fitted model; use percentiles/bands to compare models."
+    return "## 12. Limitations of this run\n\n- No reliable labels: nothing here measures detection quality. Pentest ranges are broad; overlap with them is descriptive.\n- A high rank means *unusual relative to the chosen training baseline*, which may be benign change (new services, backups, your own scanners) - and a baseline that contains attack-like activity can hide it.\n- Model features describe one host and one window only (no history, no peer baselines, no periodicity) unless relationship summaries are enabled as model inputs, so slow, low-volume or beacon-like activity may rank low.\n- Field meanings are unvalidated (see mapping). Timestamps without offset were assumed UTC where noted.\n- Changing settings after looking at test results makes later test results optimistic.\n- Raw scores are only comparable within one fitted model; use percentiles/bands to compare models."

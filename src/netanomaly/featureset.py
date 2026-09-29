@@ -64,7 +64,28 @@ FEATURES = (
     FeatureDef("mean_duration_s", "avg(duration_s)", ("flow_start", "flow_end"), True,
                "mean flow duration in seconds", "no flow has flow_end >= flow_start"),
 )
-FEATURE_BY_NAME = {f.name: f for f in FEATURES}
+# Optional history-dependent host-window summaries from relationships.py. They are model inputs only when
+# `relationship_analysis.include_model_features` is true; they are never part of the base feature table.
+REL_SQL = "relationships.py host-window summary (strictly earlier windows only)"
+REL_SOURCES = ("src_ip", "dst_ip", "flow_start")
+RELATIONSHIP_FEATURES = (
+    FeatureDef("rel_new_dst", REL_SQL, REL_SOURCES, True,
+               "destinations the host contacts for the first time since history began (never seen before)",
+               "warm-up: less than `warmup_days` of history"),
+    FeatureDef("rel_new_dst_share", REL_SQL, REL_SOURCES, False,
+               "share of the window's destinations that are never seen before (0..1)",
+               "warm-up, or no destination in the window"),
+    FeatureDef("rel_recently_unseen_dst", REL_SQL, REL_SOURCES, True,
+               "destinations contacted before, but not within `recent_lookback_days`", "never"),
+    FeatureDef("rel_freq_increase", REL_SQL, REL_SOURCES, True,
+               "pairs whose flow count is >= 2^threshold x their own recent median (enough support)", "never"),
+    FeatureDef("rel_freq_decrease", REL_SQL, REL_SOURCES, True,
+               "pairs whose flow count is <= 2^-threshold x their own recent median (enough support)", "never"),
+    FeatureDef("rel_max_abs_log2_change", REL_SQL, REL_SOURCES, False,
+               "largest |log2((flows+1)/(median+1))| among the window's pairs with enough support",
+               "no pair in the window has `min_support_windows` earlier active windows"),
+)
+FEATURE_BY_NAME = {f.name: f for f in (*FEATURES, *RELATIONSHIP_FEATURES)}
 
 
 class FeatureError(ValueError):
@@ -84,6 +105,9 @@ def select_features(available: list[str], include: list[str] | None, exclude: li
     names = list(available)
     if include is not None:
         missing = [n for n in include if n not in names]
+        if any(n.startswith("rel_") for n in missing):
+            raise FeatureError(f"feature(s) {missing} are relationship summaries: set "
+                               "relationship_analysis.enabled and include_model_features to use them")
         if missing:
             raise FeatureError(f"feature(s) {missing} need source fields that are not mapped (see profile)")
         names = [n for n in names if n in include]
@@ -209,4 +233,11 @@ def features_markdown() -> str:
         ("Known redundancy: `bytes_total`, `packets_total` and `max_flow_bytes` are strongly correlated in most "
         "traffic; keep or exclude them per experiment. Canonical field meanings are unvalidated (0/42 contract "
         "fields) - see SCHEMA.md."), "",
+        "## Optional relationship summaries (`src/netanomaly/relationships.py`)", "",
+        ("Model inputs only when `relationship_analysis.include_model_features: true` (default false: report-only). "
+         "Unlike the features above they use the host's history, but strictly earlier windows only (and, when "
+         "scoring a model bundle, the history carried in the bundle). Raw IPs and pair keys are never model inputs."),
+        "", "| feature | transform | meaning | NULL when |", "|---|---|---|---|",
+        *[f"| `{f.name}` | {'log1p' if f.log1p else '-'} | {f.description} | {f.nulls} |"
+          for f in RELATIONSHIP_FEATURES], "",
     ])

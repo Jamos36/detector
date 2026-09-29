@@ -58,6 +58,31 @@ def test_shipped_config_is_valid_and_points_at_the_bundled_demo_data():
     assert [a.name for a in ann.load_annotations(cfg.annotations)] == ["demo-injected-attack-days"]
 
 
+def test_real_data_template_keeps_every_path_outside_the_repository(tmp_path, monkeypatch):
+    monkeypatch.setenv("NETFLOW_DATA", str(tmp_path / "data"))
+    monkeypatch.setenv("NETANOMALY_WORK", str(tmp_path / "work"))
+    cfg = load_poc_config(ROOT / "config.real.example.yaml")
+    assert cfg.allow_inside_repo is False and cfg.work_dir == tmp_path / "work"
+    assert cfg.duckdb.temp_directory == tmp_path / "work" / "tmp" / "duckdb"
+    assert cfg.relationship_analysis.enabled and not cfg.relationship_analysis.include_model_features
+    shipped = load_poc_config(ROOT / "config.yaml").relationship_analysis
+    assert shipped.enabled and not shipped.include_model_features  # the demo shows the analysis, report-only
+
+
+def test_relationship_settings_are_validated(tmp_path):
+    base = {"input": {"paths": ["x"]}, "work_dir": tmp_path}
+    assert PocConfig(**base).relationship_analysis.enabled is False  # off unless configured
+    with pytest.raises(ValueError, match="needs relationship_analysis.enabled"):
+        PocConfig(**base, relationship_analysis={"include_model_features": True})
+    with pytest.raises(ValueError, match="must equal window_minutes"):
+        PocConfig(**base, window_minutes=60,
+                  relationship_analysis={"enabled": True, "include_model_features": True, "window_minutes": 30})
+    ok = PocConfig(**base, window_minutes=60, relationship_analysis={"enabled": True, "window_minutes": 30})
+    assert ok.relationship_window == 30  # report-only may use its own window
+    with pytest.raises(ValueError, match="must divide 1440"):
+        PocConfig(**base, relationship_analysis={"enabled": True, "window_minutes": 7})
+
+
 def test_memory_gb_derives_memory_settings_unless_they_are_set_explicitly(tmp_path):
     small = PocConfig(input={"paths": ["x"]}, work_dir=tmp_path, memory_gb=1, threads=2)
     big = PocConfig(input={"paths": ["x"]}, work_dir=tmp_path, memory_gb=16)

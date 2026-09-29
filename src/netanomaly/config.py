@@ -170,6 +170,31 @@ class ReportSettings(Strict):
     chart_format: Literal["svg", "png"] = "svg"
 
 
+class RelationshipSettings(Strict):
+    """Optional source -> destination behaviour tracking (relationships.py). Off by default; when on, it is a
+    report-only analysis unless `include_model_features` is also set (a separate, explicit choice)."""
+
+    enabled: bool = False
+    # Add the numeric host-window summaries (rel_*) to the model inputs. Changes the models, so it is a different
+    # experiment id. Keep false until the summaries have been reviewed on your data.
+    include_model_features: bool = False
+    window_minutes: int | None = Field(default=None, ge=1, le=1440)  # None = the top-level window_minutes
+    recent_lookback_days: float = Field(default=7, gt=0)  # "recently unseen": no contact within this many days
+    baseline_lookback_days: float = Field(default=7, gt=0)  # frequency baseline: the pair's own earlier windows
+    min_support_windows: int = Field(default=4, ge=1)  # earlier active windows needed before judging a change
+    warmup_days: float = Field(default=7, ge=0)  # "never seen" is not judged until this much history exists
+    change_log2_threshold: float = Field(default=2.0, gt=0)  # |log2((flows+1)/(baseline+1))| >= this -> changed
+    group_by_port_protocol: bool = False  # pair = (src, dst, dst_port, protocol) instead of (src, dst)
+    top_pairs: int = Field(default=25, ge=1)  # rows per evidence table in the report
+
+    @field_validator("window_minutes")
+    @classmethod
+    def _divides_day(cls, v: int | None) -> int | None:
+        if v is not None and 1440 % v:
+            raise ValueError("relationship_analysis.window_minutes must divide 1440")
+        return v
+
+
 class SearchSettings(Strict):
     # Candidate parameter overrides per model, e.g. iforest: [{n_estimators: 100}, {max_samples: 1024}]
     iforest: list[dict] = []
@@ -195,6 +220,7 @@ class PocConfig(Strict):
     diagnostics: DiagnosticSettings = DiagnosticSettings()
     report: ReportSettings = ReportSettings()
     search: SearchSettings = SearchSettings()
+    relationship_analysis: RelationshipSettings = RelationshipSettings()
     batch_rows: int = Field(default=100_000, ge=1_000)
     duckdb: DuckDBSettings = DuckDBSettings()
 
@@ -202,6 +228,20 @@ class PocConfig(Strict):
     @classmethod
     def _resources(cls, data: Any) -> Any:
         return _apply_resource_defaults(data) if isinstance(data, dict) else data
+
+    @model_validator(mode="after")
+    def _relationship_window(self) -> PocConfig:
+        rel = self.relationship_analysis
+        if rel.include_model_features and not rel.enabled:
+            raise ValueError("relationship_analysis.include_model_features needs relationship_analysis.enabled")
+        if rel.include_model_features and rel.window_minutes not in (None, self.window_minutes):
+            raise ValueError("relationship_analysis.window_minutes must equal window_minutes (or be empty) when "
+                             "include_model_features is true: the summaries join the host x window rows")
+        return self
+
+    @property
+    def relationship_window(self) -> int:
+        return self.relationship_analysis.window_minutes or self.window_minutes
 
     @field_validator("window_minutes")
     @classmethod

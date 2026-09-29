@@ -8,14 +8,19 @@ Operating rules for Claude in this repo. Project state lives in files, not in ch
 3. Work on ONE bounded task with an observable definition of done.
 
 ## What this is
-A proof of concept (ADR-024, ADR-031): rank unusual host x window activity in NetFlow Parquet with Isolation Forest
-and One-Class SVM, and report it against user-supplied pentest date ranges. Only this code exists; the earlier lake
-pipeline was removed. The owner works with the bundled mock/synthetic data only (no real data will arrive).
+A proof of concept (ADR-024, ADR-031, ADR-032): rank unusual host x window activity in NetFlow Parquet with
+Isolation Forest and One-Class SVM, and report it against user-supplied pentest date ranges. Workflow A: develop on
+train + validation, freeze a model bundle, score the reserved test period once with it. Workflow B: score new Parquet
+with a saved bundle (no fitting). Optional past-only source -> destination tracking (ADR-033, report-only unless
+`include_model_features`). The repo holds only bundled mock/synthetic data; real data (about a year, ~10 M flows)
+may arrive and must stay outside the repository (`config.real.example.yaml`).
 The owner is not a developer: keep running it to `uv run netanomaly` + `config.yaml`, keep README steps simple.
 
 ## Commands
-- `uv run netanomaly` — full run with `config.yaml` (demo data `data/synth/raw`); prints the report.html path
-- `uv run netanomaly profile|features|train|score|report|search|docs [--config FILE]`
+- `uv run netanomaly` — development + final test with `config.yaml` (demo data `data/synth/raw`); prints both
+  report paths
+- `uv run netanomaly profile|features|train|score|report|search|test|docs [--config FILE]`
+- `uv run netanomaly score-new --bundle <work_dir>/bundles/<id> --input PATH [--history RUN_DIR]`
 - `uv run pytest -q` — all tests (must pass before any commit); `uv run ruff check src tests`
 - `uv run netanomaly docs` after changing `featureset.FEATURES` or the contract (FEATURES.md / SCHEMA.md are
   generated and drift-tested)
@@ -30,6 +35,8 @@ The owner is not a developer: keep running it to `uv run netanomaly` + `config.y
 - Never assume a field's meaning from its name: the mapping is explicit and reported (contract 0/42 validated).
 - No temporal leakage: anything learned (imputer, scaler, screening, model) uses training rows only; bands calibrate
   on validation; splits are chronological. Keep the leakage tests.
+- The test period and new data are scored only through a frozen bundle (`scoring.py`); nothing is fitted there.
+  Relationship signals use strictly earlier windows (+ carried history state). Keep those tests too.
 - Scores are rankings, not probabilities; bands are review bands (`Benign` = below threshold); pentest ranges are
   weak context, never labels; no accuracy/precision/recall/FPR.
 - Add a dependency only when it solves a concrete problem.

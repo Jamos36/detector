@@ -13,6 +13,7 @@ import pyarrow.parquet as pq
 import pytest
 
 from netanomaly import experiment as exp
+from netanomaly import scoring
 from netanomaly.cli import main
 from netanomaly.config import BandSettings, load_poc_config
 from netanomaly.db import connect, sql_literal
@@ -45,7 +46,9 @@ def run(tmp_path_factory):
     tmp = tmp_path_factory.mktemp("poc")
     cfg = load_poc_config(_setup(tmp))
     report = exp.run_experiment(cfg)
-    return {"tmp": tmp, "cfg": cfg, "report": report, "ctx": exp.open_context(cfg), "dir": report.parent}
+    test_report = scoring.run_holdout(cfg, scoring.bundle_for_config(cfg))
+    return {"tmp": tmp, "cfg": cfg, "report": report, "ctx": exp.open_context(cfg), "dir": report.parent,
+            "test_dir": test_report.parent}
 
 
 def _q(ctx, sql: str):
@@ -64,9 +67,11 @@ def test_experiment_writes_every_output_and_a_complete_manifest(run):
     d = run["dir"]
     for name in ("manifest.json", "scores.parquet", "alerts.parquet", "daily_summary.parquet",
                  "entity_summary.parquet", "diagnostics.json", "robustness.json", "report.md",
+                 "train_stats.parquet", "train_entities.parquet",
                  "models/iforest.joblib", "models/ocsvm.joblib", "charts/overview.svg", "charts/model_comparison.svg"):
         assert (d / name).exists(), name
     m = _manifest(d)
+    assert Path(m["bundle"]["path"]).is_dir() and m["bundle"]["bundle_id"].startswith(d.name)
     assert m["experiment_id"] == d.name == run["ctx"].experiment_id
     assert [p["name"] for p in m["periods"]] == ["train", "validation", "test"]
     assert m["input"]["files"] == len(DAYS) and len(m["input"]["fingerprint"]) == 64
@@ -77,12 +82,16 @@ def test_experiment_writes_every_output_and_a_complete_manifest(run):
     assert m["features"]["model_inputs"] and set(m["features"]["model_inputs"]) <= set(m["feature_table"]["computed"])
 
 
-def test_scores_cover_every_window_with_periods_bands_and_annotation_context(run):
+def test_development_scores_cover_train_and_validation_but_never_the_test_period(run):
     ctx, d = run["ctx"], run["dir"]
     scores = _rel(d / "scores.parquet")
-    assert _q(ctx, f"SELECT count(*) FROM {scores}")[0][0] == ctx.table.rows
+    dev_rows = _q(ctx, f"SELECT count(*) FROM {ctx.table.relation()} WHERE {ctx.dev_where()}")[0][0]
+    assert _q(ctx, f"SELECT count(*) FROM {scores}")[0][0] == dev_rows < ctx.table.rows
     periods = dict(_q(ctx, f"SELECT period, count(DISTINCT flow_date) FROM {scores} GROUP BY 1"))
-    assert periods == {"train": 4, "validation": 2, "test": 2}
+    assert periods == {"train": 4, "validation": 2}
+    rob = json.loads((d / "robustness.json").read_text(encoding="utf-8"))
+    assert rob["seed_period"] == rob["variant_period"] == "validation"
+    assert "reserved" in run["report"].read_text(encoding="utf-8")
     bands = {b for (b,) in _q(ctx, f"SELECT DISTINCT iforest_band FROM {scores}")}
     assert bands <= {"Critical", "High", "Medium", "Low", "Benign"} and "Benign" in bands
     cats = dict(_q(ctx, f"SELECT annotation_category, count(*) FROM {scores} GROUP BY 1"))
@@ -92,8 +101,8 @@ def test_scores_cover_every_window_with_periods_bands_and_annotation_context(run
     assert crit <= 0.01
 
 
-def test_the_held_out_scan_is_flagged_and_traceable_to_its_source_rows(run):
-    ctx, d = run["ctx"], run["dir"]
+def test_the_held_out_scan_is_flagged_by_the_final_test_and_traceable_to_its_source_rows(run):
+    ctx, d = run["ctx"], run["test_dir"]
     row = _q(ctx, f"SELECT ocsvm_band, beyond_train_range, alert_rank, trace_flow_count, trace_rows "
                   f"FROM {_rel(d / 'alerts.parquet')} WHERE src_ip = '{SCAN[0]}' AND window_start = "
                   f"TIMESTAMPTZ '{SCAN[1].isoformat()}'")
@@ -198,6 +207,8 @@ def test_cli_profile_and_experiment_smoke(tmp_path):
     assert "Field mapping" in profile and "src_id_addr" in profile
     main(["run", "--config", str(cfg)])
     assert len(list((tmp_path / "work_cli" / "experiments").glob("*/report.md"))) == 1
+    tests = list((tmp_path / "work_cli" / "scoring").glob("holdout-test-*/report.md"))
+    assert len(tests) == 1 and "Final test report" in tests[0].read_text(encoding="utf-8")
 
 
 def test_real_data_cannot_be_read_from_or_written_into_the_checkout(tmp_path):

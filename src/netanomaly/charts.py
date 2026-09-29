@@ -164,6 +164,26 @@ def bands_over_time(path: Path, weeks: list[datetime], counts: dict[str, dict[st
                             "ramp is ordinal (rank), not a severity scale.")
 
 
+def relationship_trends(path: Path, buckets: list[datetime], series: dict[str, list[float]], intervals: list,
+                        bucket: str) -> Path:
+    """Pair-windows per day/week with each relationship signal (one line per signal, categorical colours)."""
+    fig, ax = plt.subplots(figsize=(11, 3.4), constrained_layout=True)
+    shade_annotations(ax, intervals)
+    if buckets:
+        step = buckets[1] - buckets[0] if len(buckets) > 1 else timedelta(days=1 if bucket == "day" else 7)
+        xs = [*buckets, buckets[-1] + step]
+        for i, (name, ys) in enumerate(series.items()):
+            ax.step(xs, [*ys, ys[-1]], where="post", color=model_color(i), label=name)
+    ax.set_ylim(bottom=0)
+    ax.set_ylabel(f"pair-windows per {bucket}")
+    ax.set_title(f"Source -> destination signals per UTC {bucket}", loc="left")
+    ax.legend(handles=[*ax.get_legend_handles_labels()[0], *annotation_legend()], loc="upper left", ncol=3)
+    _date_axis(ax)
+    return _save(fig, path, f"Bucket = 1 UTC {bucket}; counts aggregated in DuckDB from strictly past-only pair "
+                            "history. Review signals, not probabilities or confirmed attacks. Grey shading is "
+                            "user-supplied context, not ground truth.")
+
+
 def cutoff_curve(path: Path, curve: list[dict], band_q: dict[str, dict[str, float]]) -> Path:
     models = list(dict.fromkeys(r["model"] for r in curve))
     fig, axes = plt.subplots(1, len(models), figsize=(5.2 * len(models), 3.4), constrained_layout=True,

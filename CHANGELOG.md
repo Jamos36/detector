@@ -1,6 +1,23 @@
 # Changelog
 
 ## Unreleased
+- feat (ADR-032): explicit train / validation / holdout-test and new-data workflows. The development experiment no
+  longer scores the test period (robustness on validation); `finalize` writes a frozen model bundle
+  (`<work_dir>/bundles/<id>`); `netanomaly test` scores the reserved test period once with it (holdout ledger:
+  first / repeat / reused) and `netanomaly score-new --bundle --input [--history]` scores new Parquet with it (field
+  contract checked first; no fitting). Separate reports: development (training + validation), final test and new
+  data, each naming the bundle and data period (`run_report.py`). Training reference summaries moved to
+  `train_stats.parquet` / `train_entities.parquet` so scoring needs no training rows. `run` = development + final
+  test. Input from outside the checkout may no longer write inside it, even with `allow_inside_repo: true`;
+  `config.real.example.yaml` template. POC_VERSION 2.
+- feat (ADR-033): optional source -> destination behaviour tracking (`relationship_analysis:`, `relationships.py`,
+  `relationship_report.py`): sparse pair x window table with never-seen / recently-unseen destinations and
+  frequency change against the pair's own past (median + smoothed log2 ratio, minimum support), strictly past-only,
+  host-window summary, evidence with reasons, carried history state; report section with daily/weekly trends and
+  ranked traceable pair tables; `include_model_features` adds six `rel_*` summaries to the model inputs (off by
+  default). Demo config enables it report-only.
+- fix (ADR-034): avoid a DuckDB 1.5.5 internal error on min/max over a single hive partition.
+- 65 tests (22 new: relationships, bundle, holdout, new data, config modes, boundary).
 - refactor (ADR-031): removed all code, tests and generated data artifacts outside the proof of concept (lake
   pipeline, synthetic generator, legacy features/models, memtest); kept mock/synthetic raw data and truth. Package
   flattened (`netanomaly.poc` -> `netanomaly`); `uv run netanomaly` runs everything with the ready `config.yaml`

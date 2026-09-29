@@ -1,21 +1,29 @@
-"""Experiment orchestration: the Python API behind `netanomaly <stage>`.
+"""Development experiment (training + validation): the Python API behind `netanomaly <stage>`.
 
-    ctx = open_context(cfg)          # source + mapping, feature table (cached), split, feature screening, id
+    ctx = open_context(cfg)          # source + mapping, feature table (cached), split, optional relationship
+                                     # analysis (up to the test start), feature screening, id
     fitted = train_models(ctx)       # fit IF / OCSVM on the training period, save pipelines
-    score_models(ctx, fitted)        # score every window (scores_raw.parquet)
-    robustness(ctx, fitted)          # seed stability + contamination variants (label-free)
-    finalize(ctx)                    # bands, output tables, diagnostics, report, manifest
+    score_models(ctx, fitted)        # score the development windows (everything before the test period)
+    robustness(ctx, fitted)          # seed stability + contamination variants on validation (label-free)
+    finalize(ctx)                    # bands from validation, outputs, diagnostics, development report, BUNDLE
+
+The reserved test period is never scored, plotted or summarised here: `scoring.run_holdout` scores it once with the
+frozen bundle (see scoring.py), and `scoring.score_new` scores entirely new Parquet data with a bundle.
 
 Layout under `work_dir` (outside the checkout, ADR-012):
     profile/                         profile.json, profile.md
     features/<key>/                  cached host-window table + meta.json
+    relationships/<key>/             cached development relationship analysis (when enabled)
     experiments/<experiment_id>/     manifest.json, models/, scores_raw.parquet, scores.parquet, alerts.parquet,
-                                     daily_summary.parquet, entity_summary.parquet, diagnostics.json,
-                                     robustness.json, report.md, charts/, search/
+                                     daily_summary.parquet, entity_summary.parquet, train_stats.parquet,
+                                     train_entities.parquet, diagnostics.json, robustness.json, report.md, charts/
+    bundles/<bundle_id>/             frozen model bundle (bundle.py)
+    scoring/<run_id>/                holdout-test and new-data scoring runs (scoring.py)
 
 The experiment id hashes everything that changes the fitted models or their inputs (input fingerprint, mapping,
-window, selected features, split, training exclusion, model settings, seeds). Band cutoffs are not part of it:
-re-banding reuses the experiment and is recorded in `band_revisions`.
+window, selected features, split, training exclusion, model settings, seeds, relationship inputs when they are model
+features). Band cutoffs are not part of it: re-banding reuses the experiment, is recorded in `band_revisions`, and
+produces a new bundle id.
 """
 
 from __future__ import annotations
@@ -39,7 +47,9 @@ import sklearn
 from netanomaly import bands as bands_mod
 from netanomaly import diagnostics as diag
 from netanomaly import outputs
+from netanomaly import relationships as rel
 from netanomaly.annotations import OUTSIDE, Annotation, category_sql, load_annotations, overlaps
+from netanomaly.bundle import make_bundle_id, required_fields, save_bundle
 from netanomaly.config import BandSettings, PocConfig
 from netanomaly.db import connect
 from netanomaly.featureset import FeatureTable, build_feature_table, feature_quality, select_features
@@ -53,11 +63,18 @@ from netanomaly.models import (
     specs_from_config,
 )
 from netanomaly.profile import build_profile, write_profile
-from netanomaly.source import Source, check_outside_repo, open_source, repo_root
+from netanomaly.source import (
+    Source,
+    check_external_inputs,
+    check_outside_repo,
+    open_source,
+    repo_root,
+    resolve_files,
+)
 from netanomaly.splits import Period, resolve_split
 
 log = logging.getLogger("netanomaly")
-POC_VERSION = 1
+POC_VERSION = 2  # 2: the development experiment no longer scores the reserved test period
 SCORES_RAW = "scores_raw.parquet"
 MANIFEST = "manifest.json"
 DIAGNOSTICS = "diagnostics.json"
@@ -84,9 +101,19 @@ class Context:
     experiment_id: str
     exp_dir: Path
     warnings: list[str] = field(default_factory=list)
+    relationships: rel.RelationshipResult | None = None  # development relationship analysis (None when disabled)
 
     def period(self, name: str) -> Period | None:
         return next((p for p in self.periods if p.name == name), None)
+
+    @property
+    def dev_periods(self) -> list[Period]:
+        """Train and validation: what the development experiment may look at (the test period is reserved)."""
+        return [p for p in self.periods if p.name != "test"]
+
+    def dev_where(self, col: str = "window_start") -> str:
+        test = self.period("test")
+        return f"{col} < TIMESTAMPTZ '{test.start_dt.isoformat()}'" if test else "TRUE"
 
     @property
     def train(self) -> Period:
@@ -107,29 +134,59 @@ class Context:
 
 # --- setup -------------------------------------------------------------------------------------------------------
 
-def _connect_and_open(cfg: PocConfig) -> tuple[duckdb.DuckDBPyConnection, Source]:
-    """Boundary checks first (connect() creates the spill directory under work_dir), then the source."""
-    check_outside_repo([cfg.work_dir, cfg.duckdb.temp_directory], "work_dir (outputs, models, spill)",
-                       cfg.allow_inside_repo)
+def connect_and_open(cfg: PocConfig, paths: list[str] | None = None, field_map: dict | None = None,
+                     epoch_unit: dict | None = None) -> tuple[duckdb.DuckDBPyConnection, Source]:
+    """Every boundary check before connect(), which creates the spill directory; then the source."""
+    paths = paths or cfg.input.paths
+    outputs_ = [cfg.work_dir, cfg.duckdb.temp_directory]
+    check_outside_repo(outputs_, "work_dir (outputs, models, spill)", cfg.allow_inside_repo)
+    inputs = [Path(f.path) for f in resolve_files(paths)]
+    check_outside_repo(inputs, "input data", cfg.allow_inside_repo)
+    check_external_inputs(inputs, outputs_, cfg.allow_inside_repo)
     con = connect(cfg.duckdb)
-    source = open_source(con, cfg.input.paths, cfg.input.field_map, cfg.input.epoch_unit)
-    check_outside_repo([Path(f.path) for f in source.files], "input data", cfg.allow_inside_repo)
+    source = open_source(con, paths, cfg.input.field_map if field_map is None else field_map,
+                         cfg.input.epoch_unit if epoch_unit is None else epoch_unit)
     return con, source
 
 
 def run_profile(cfg: PocConfig) -> Path:
-    con, source = _connect_and_open(cfg)
+    con, source = connect_and_open(cfg)
     return write_profile(build_profile(con, source, cfg.window_minutes), cfg.work_dir / "profile")
 
 
+def _development_relationships(cfg: PocConfig, con: duckdb.DuckDBPyConnection, source: Source, table: FeatureTable,
+                               periods: list[Period], rebuild: bool) -> rel.RelationshipResult:
+    """Relationship analysis of everything before the test period (cached like the feature table)."""
+    params = rel.params_from(cfg)
+    test = next((p for p in periods if p.name == "test"), None)
+    until = test.start_dt if test else None
+    key = hashlib.sha256(json.dumps([source.fingerprint, table.key, params.key, str(until)]).encode()).hexdigest()
+    out = cfg.work_dir / "relationships" / key[:16]
+    summary = out / "summary.json"
+    if summary.exists() and not rebuild:
+        return rel.load_result(out)
+    shutil.rmtree(out, ignore_errors=True)
+    result = rel.analyze(con, source, params, out, end=until)
+    log.info("relationships: %d active pair-windows, %d host-windows, %d notable (history %s .. %s) -> %s",
+             result.pair_windows, result.host_windows, result.evidence_rows, result.history_start, result.end, out)
+    return result
+
+
 def open_context(cfg: PocConfig, *, rebuild_features: bool = False) -> Context:
-    con, source = _connect_and_open(cfg)
+    con, source = connect_and_open(cfg)
     table = build_feature_table(con, source, cfg.window_minutes, cfg.work_dir / "features", rebuild=rebuild_features)
     annotations = load_annotations(cfg.annotations)
     days = [d for (d,) in con.execute(f"SELECT DISTINCT flow_date FROM {table.relation()} ORDER BY 1").fetchall()]
     periods = resolve_split(cfg.split, days)
+    rel_result = None
+    if cfg.relationship_analysis.enabled:
+        rel_result = _development_relationships(cfg, con, source, table, periods, rebuild_features)
+        if cfg.relationship_analysis.include_model_features:
+            test = next((p for p in periods if p.name == "test"), None)
+            where = f"window_start < TIMESTAMPTZ '{test.start_dt.isoformat()}'" if test else "TRUE"
+            table = rel.extend_feature_table(con, table, rel_result, cfg.work_dir / "features", where)
     selected = select_features(table.features, cfg.features.include, cfg.features.exclude)
-    ctx = Context(cfg, con, source, table, annotations, periods, selected, [], [], "", Path())
+    ctx = Context(cfg, con, source, table, annotations, periods, selected, [], [], "", Path(), relationships=rel_result)
     ctx.quality = feature_quality(con, table, selected, ctx.train_where())
     ctx.features = [q["feature"] for q in ctx.quality if q["status"] == "ok"]
     for q in ctx.quality:
@@ -157,6 +214,8 @@ def experiment_id(ctx: Context) -> str:
                "annotations": [a.to_dict() for a in ctx.annotations] if excluding else None,
                "annotation_buffer_hours": ctx.cfg.annotation_buffer_hours if excluding else None,
                "models": [{"kind": s.kind, "settings": s.settings, "seed": s.seed} for s in specs]}
+    if ctx.cfg.relationship_analysis.include_model_features:  # report-only analysis leaves the id unchanged
+        payload["relationship_features"] = rel.params_from(ctx.cfg).to_dict()
     digest = hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()[:10]
     return f"{ctx.cfg.name}-{digest}"
 
@@ -192,22 +251,23 @@ def load_models(ctx: Context) -> list[FittedModel]:
 
 
 def score_models(ctx: Context, fitted: list[FittedModel] | None = None) -> Path:
+    """Score the development windows (before the test period). The test period is scored only by the frozen
+    bundle (scoring.run_holdout), so nothing here can be tuned on it."""
     fitted = fitted or load_models(ctx)
     out = ctx.exp_dir / SCORES_RAW
-    n = score_to_parquet(ctx.con, ctx.table, fitted, out, ctx.cfg.batch_rows)
-    log.info("scored %d windows with %s -> %s", n, [f.model_id for f in fitted], out)
-    write_manifest(ctx, {"scored_windows": n})
+    n = score_to_parquet(ctx.con, ctx.table, fitted, out, ctx.cfg.batch_rows, ctx.dev_where())
+    log.info("scored %d development windows with %s -> %s", n, [f.model_id for f in fitted], out)
+    write_manifest(ctx, {"scored_windows": n, "scored_scope": ctx.dev_where()})
     return out
 
 
 def robustness(ctx: Context, fitted: list[FittedModel] | None = None) -> dict:
-    """Seed stability (on validation) and contamination variants (on test), compared with the primary models."""
+    """Seed stability and contamination variants on validation (never the reserved test period)."""
     fitted = fitted or load_models(ctx)
     raw = outputs.parquet(ctx.exp_dir / SCORES_RAW)
     d = ctx.cfg.diagnostics
     tmp = ctx.exp_dir / "tmp"
-    seed_period = ctx.period("validation") or ctx.period("test") or ctx.train
-    eval_period = ctx.period("test") or ctx.period("validation") or ctx.train
+    seed_period = eval_period = ctx.period("validation") or ctx.train
     result: dict = {"seed_period": seed_period.name, "variant_period": eval_period.name, "seed_stability": [],
                     "variants": []}
     for f in fitted:
@@ -281,11 +341,13 @@ def finalize(ctx: Context, band_settings: BandSettings | None = None) -> Path:
         cutoffs.append(bands_mod.calibrate(m, ref, per_day, settings, ref_period.name))
         grids[m], refs[m] = bands_mod.percentile_grid(ref), ref
     d, b = ctx.exp_dir, ctx.cfg.annotation_buffer_hours
+    stats, entities = outputs.write_training_reference(ctx.con, ctx.table, ctx.train.where(), ctx.train_where(),
+                                                       ctx.features, d)
     outputs.write_scores(ctx.con, ctx.table, raw_path, ctx.periods, ctx.annotations, b, cutoffs, grids,
-                         d / outputs.SCORES, ctx.features, ctx.train_where())
+                         d / outputs.SCORES, ctx.features, stats)
     n_alerts = outputs.write_alerts(ctx.con, d / outputs.SCORES, ctx.source, models, ctx.features,
                                     ctx.table.features, d / outputs.ALERTS, ctx.cfg.report.trace_top_n,
-                                    ctx.cfg.report.trace_rows_per_window)
+                                    ctx.cfg.report.trace_rows_per_window, stats, entities)
     outputs.write_daily_summary(ctx.con, d / outputs.SCORES, models, ctx.annotations, b, settings.below_label,
                                 d / outputs.DAILY)
     outputs.write_entity_summary(ctx.con, d / outputs.SCORES, models, d / outputs.ENTITY)
@@ -293,12 +355,53 @@ def finalize(ctx: Context, band_settings: BandSettings | None = None) -> Path:
     (d / DIAGNOSTICS).write_text(json.dumps(diagnostics, indent=2, default=str), encoding="utf-8")
     rob_path = d / ROBUSTNESS
     rob = json.loads(rob_path.read_text(encoding="utf-8")) if rob_path.exists() else None
-    manifest = write_manifest(ctx, {"review_windows": n_alerts}, band_revision={
-        "at": datetime.now(UTC).isoformat(), "settings": settings.model_dump(), "reference": ref_period.name,
-        "cutoffs": [c.to_dict() for c in cutoffs]})
+    revision = {"at": datetime.now(UTC).isoformat(), "settings": settings.model_dump(), "reference": ref_period.name,
+                "cutoffs": [c.to_dict() for c in cutoffs]}
+    bundle_path = write_bundle(ctx, settings, ref_period, cutoffs, grids, stats, entities)
+    manifest = write_manifest(ctx, {"review_windows": n_alerts, "bundle": {
+        "bundle_id": bundle_path.name, "path": str(bundle_path)}}, band_revision=revision)
     path = report.write_report(ctx, manifest, cutoffs, diagnostics, rob)
-    log.info("%d windows in a review band of at least one model", n_alerts)
+    log.info("%d development windows in a review band of at least one model; bundle -> %s", n_alerts, bundle_path)
     return path
+
+
+def write_bundle(ctx: Context, settings: BandSettings, ref_period: Period, cutoffs: list, grids: dict,
+                 stats: Path, entities: Path) -> Path:
+    """Freeze the fitted models, ordered inputs, mapping, validation cutoffs and history state (bundle.py)."""
+    r = ctx.relationships
+    rel_meta = ({"enabled": True, "include_model_features": ctx.cfg.relationship_analysis.include_model_features,
+                 "params": r.params.to_dict(), "history_start": r.history_start, "history_end": r.end}
+                if r is not None else {"enabled": False})
+    bundle_id = make_bundle_id(ctx.experiment_id, cutoffs, rel_meta)
+    models_dir = ctx.exp_dir / "models"
+    model_meta = [json.loads((models_dir / f"{m}.json").read_text(encoding="utf-8")) for m in ctx.model_ids]
+    test = ctx.period("test")
+    meta = {
+        "bundle_id": bundle_id, "experiment_id": ctx.experiment_id, "poc_version": POC_VERSION,
+        "code": code_revision(), "versions": _versions(), "config": json.loads(ctx.cfg.model_dump_json()),
+        "input": {"files": len(ctx.source.files), "fingerprint": ctx.source.fingerprint},
+        "window_minutes": ctx.cfg.window_minutes,
+        "field_mapping": ctx.source.mapping.to_dict(),
+        "field_map": {f.name: f.source for f in ctx.source.mapping.fields},
+        "epoch_unit": ctx.source.epoch_unit,
+        "required_fields": required_fields(ctx.features, rel_meta),
+        "features": {"model_inputs": ctx.features, "computed": ctx.table.features, "quality": ctx.quality},
+        "models": model_meta,
+        "periods": {**{p.name: p.to_dict() for p in ctx.dev_periods if p.name in ("train", "validation")},
+                    **({"test": test.to_dict()} if test else {})},
+        "training_filter": {"exclude_annotated": ctx.cfg.split.exclude_annotated_from_train,
+                            "where": ctx.train_where()},
+        "bands": {"settings": settings.model_dump(), "reference": ref_period.name,
+                  "cutoffs": [c.to_dict() for c in cutoffs]},
+        "percentile_grids": {m: [list(x) for x in g] for m, g in grids.items()},
+        "relationship_analysis": rel_meta,
+        "notes": {"test": "the test period is reserved: score it once with `netanomaly test` (holdout); every "
+                          "later look after changing settings is a new experiment",
+                  "scores": "rankings within one fitted model, higher = more anomalous; not probabilities",
+                  "state": "scoring never refits models, imputers, scalers or cutoffs; the relationship history is "
+                           "continued from this bundle and never used to change the bundle"}}
+    return save_bundle(ctx.cfg.work_dir / "bundles" / bundle_id, meta, models_dir, ctx.model_ids, stats, entities,
+                       r)
 
 
 def compute_diagnostics(ctx: Context, models: list[str], refs: dict[str, np.ndarray]) -> dict:
@@ -313,11 +416,11 @@ def compute_diagnostics(ctx: Context, models: list[str], refs: dict[str, np.ndar
            "annotation_overlap": diag.annotation_overlap(con, rel, models, ctx.annotations, buffers,
                                                           d.top_k_per_day),
            "feature_drift": diag.feature_drift(con, ctx.table, ctx.features, ctx.train,
-                                                  diag.time_bucket(ctx.periods)[0])}
+                                                  diag.time_bucket(ctx.dev_periods)[0], ctx.dev_where())}
     if len(models) >= 2:
         a, b = models[:2]
         out["model_agreement"] = diag.model_agreement(con, rel, a, b, d.top_n, d.top_k_per_day)
-        focus = "test" if ctx.period("test") else ctx.periods[-1].name
+        focus = ctx.dev_periods[-1].name
         out["disagreements"] = {"period": focus, "rows": diag.disagreements(con, rel, a, b, focus, 15)}
     return out
 
@@ -415,6 +518,11 @@ def code_revision() -> dict:
     return {"commit": commit, "src_dirty": dirty}
 
 
+def _versions() -> dict:
+    return {"python": platform.python_version(), "scikit-learn": sklearn.__version__, "numpy": np.__version__,
+            "duckdb": duckdb.__version__, "pyarrow": pyarrow.__version__, "matplotlib": matplotlib.__version__}
+
+
 def write_manifest(ctx: Context, extra: dict, band_revision: dict | None = None) -> dict:
     path = ctx.exp_dir / MANIFEST
     ctx.exp_dir.mkdir(parents=True, exist_ok=True)
@@ -427,9 +535,7 @@ def write_manifest(ctx: Context, extra: dict, band_revision: dict | None = None)
         "updated_at": now,
         "poc_version": POC_VERSION,
         "code": code_revision(),
-        "versions": {"python": platform.python_version(), "scikit-learn": sklearn.__version__,
-                     "numpy": np.__version__, "duckdb": duckdb.__version__, "pyarrow": pyarrow.__version__,
-                     "matplotlib": matplotlib.__version__},
+        "versions": _versions(),
         "config": json.loads(ctx.cfg.model_dump_json()),
         "input": {"files": len(ctx.source.files), "bytes": sum(f.size for f in ctx.source.files),
                   "fingerprint": ctx.source.fingerprint, "paths": [f.path for f in ctx.source.files]},

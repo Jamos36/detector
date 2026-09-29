@@ -1,0 +1,59 @@
+# =====================================================================================================
+#  Template for REAL NetFlow data. Keep your copy OUTSIDE this repository (or use this file as-is with the
+#  environment variables below), then run:
+#      uv run netanomaly --config path/to/my-real.yaml
+#
+#  Safety (ADR-012): real data and everything computed from it - caches, feature tables, relationship tables,
+#  model bundles, scores, reports, logs and DuckDB spill files - must stay OUTSIDE the repository.
+#  This template therefore uses environment variables instead of paths, e.g. (PowerShell):
+#      $env:NETFLOW_DATA = "D:\netflow\parquet"        # the Parquet files (read in place, never copied)
+#      $env:NETANOMALY_WORK = "D:\netanomaly-work"     # every output, bundle and spill file goes here
+#  allow_inside_repo stays false: the run refuses any input, output or spill path inside the repository.
+# =====================================================================================================
+
+memory_gb: 8
+threads: 4
+
+input:
+  paths: ["${NETFLOW_DATA}"]
+  field_map: {}                  # run `uv run netanomaly profile --config ...` first and map your columns here
+  epoch_unit: {}
+allow_inside_repo: false         # never true for real data
+work_dir: ${NETANOMALY_WORK}
+duckdb:
+  temp_directory: ${NETANOMALY_WORK}/tmp/duckdb   # DuckDB spill files (can hold raw values): outside the repo
+
+# Chronological split for about a year of data (UTC dates, end exclusive). Example only: adjust to your data.
+split:
+  train:      {start: 2025-01-01, end: 2025-07-01}   # the baseline ("normal")
+  validation: {start: 2025-07-01, end: 2025-09-01}   # compare settings, calibrate the review bands
+  test:       {start: 2025-09-01, end: 2026-01-01}   # scored once, with the frozen bundle
+  exclude_annotated_from_train: false
+
+annotations: null                # path to your pentest date ranges (same format as annotations.yaml); context only
+annotation_buffer_hours: 24
+
+name: real
+window_minutes: 15
+models:
+  seed: 42
+  iforest: {n_estimators: 200, max_samples: 256}
+  ocsvm: {nu: 0.05, gamma: scale}
+bands:
+  reference: validation
+  mode: quantile
+  quantiles: {Critical: 0.999, High: 0.995, Medium: 0.99, Low: 0.975}
+report:
+  chart_format: svg
+
+relationship_analysis:
+  enabled: true
+  include_model_features: false  # report-only until the signals have been reviewed on this data
+  window_minutes: null
+  recent_lookback_days: 7
+  baseline_lookback_days: 7
+  warmup_days: 7
+  min_support_windows: 4
+  change_log2_threshold: 2
+  group_by_port_protocol: false
+  top_pairs: 25

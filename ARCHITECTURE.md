@@ -8,17 +8,27 @@ small RAM budget.
 
 # Design (ADR-024…031)
 
-## Flow
+## Flow (ADR-032)
 ```
+A. DEVELOPMENT (experiment.py)                         everything before split.test.start
 external Parquet (read in place)  ->  profile            (DuckDB aggregates only)
         |  field_map -> canonical flow relation (+ source_file, source_row_index)
         v
-host x window feature table (cached)  ->  split: train | validation | test  (whole UTC days, chronological)
-        |                                      |
+host x window feature table (cached)  ->  split: train | validation | [test reserved]  (whole UTC days)
+        |   [optional relationships.py: pair x window signals, past-only; rel_* summaries join only when
+        |    include_model_features]
         |              fit on train only: log1p -> median imputer -> scaler -> IsolationForest / OneClassSVM
-        v                                      v
-score every window (Arrow batches, raw = -score_samples)  ->  bands from validation quantiles / budget
-        -> scores / alerts / summaries (Parquet) -> diagnostics (JSON) -> report.md + charts (SVG/PNG)
+        v
+score train + validation (Arrow batches, raw = -score_samples)  ->  bands from validation quantiles / budget
+        -> scores / alerts / summaries -> diagnostics -> development report
+        -> MODEL BUNDLE (bundle.py): pipelines, ordered inputs, mapping, window, cutoffs + grids, periods,
+           training summaries, relationship history state
+
+B. SCORING WITH A BUNDLE (scoring.py)                 nothing is fitted
+   holdout test: bundle's split.test of the configured input  |  new data: any Parquet after the history end
+   check field contract -> features (bundle window/mapping) -> [relationships continued from the history state]
+   -> score with the frozen pipelines in the bundle's input order -> bundle cutoffs -> run report (run_report.py)
+   holdout runs are logged in holdout_ledger.json (first / repeat / reused)
 ```
 
 ## Modules (`src/netanomaly/`)
@@ -34,9 +44,12 @@ score every window (Arrow batches, raw = -score_samples)  ->  bands from validat
 | `bands.py` | reference-quantile / budget cutoffs, band SQL, percentile grid |
 | `diagnostics.py` | label-free and weak-annotation diagnostics (distributions, volume vs cutoff, concentration, overlap, agreement, drift, training concentration) |
 | `outputs.py` | scores / alerts (deviations, host baseline, `beyond_train_range`, source traces) / daily and entity summaries |
-| `experiment.py` | orchestration (`open_context`, `train_models`, `score_models`, `robustness`, `finalize`, `run_search`), experiment id, manifest |
-| `charts.py`, `report.py` | static charts from aggregated data; `report.md` + `report.html` |
-| `cli.py` | `uv run netanomaly [run|profile|features|train|score|report|search|docs]` |
+| `experiment.py` | development orchestration (`open_context`, `train_models`, `score_models`, `robustness`, `finalize`, `write_bundle`, `run_search`), experiment id, manifest; never scores the test period |
+| `relationships.py` | optional source -> destination analysis: sparse pair x window table, novelty / frequency-change signals from strictly earlier windows, host-window summary, evidence, carried history state, optional `rel_*` model inputs |
+| `bundle.py` | frozen model bundle: save / load (sha256-checked), field-contract compatibility check |
+| `scoring.py` | holdout test and new-data scoring with a bundle (no fitting), holdout ledger, `run.json` |
+| `charts.py`, `report.py`, `run_report.py`, `relationship_report.py` | static charts from aggregated data; development report, final-test / new-data report, relationship section (`report.md` + `report.html`) |
+| `cli.py` | `uv run netanomaly [run|profile|features|train|score|report|search|test|score-new|docs]` |
 | `db.py`, `timestamps.py`, `schema.py` + `contracts/netflow_v1.yaml` | DuckDB connection (UTC, memory limit, spill), strict timestamp parsing, column dictionary (default field mapping, SCHEMA.md) |
 
 ## Data boundary and traceability (ADR-012, ADR-025)
@@ -55,6 +68,13 @@ score every window (Arrow batches, raw = -score_samples)  ->  bands from validat
   optionally by annotation category) before a per-day hash sample whose membership depends only on each row's key.
   Imputer, scaler, feature screening and the models see training rows only; band cutoffs come from validation.
   Tests check that extra future rows change neither training-period scores nor cutoffs.
+- The development experiment scores, plots and summarises only windows before the test start; robustness variants
+  use validation. The test period is scored once by `scoring.run_holdout` with the frozen bundle (ADR-032).
+- Relationship signals (ADR-033) use DuckDB window frames that end before the current row (`lag`, `RANGE ...
+  PRECEDING ... EXCLUDE CURRENT ROW`) plus a carried state (per-pair first/last seen and the last
+  `baseline_lookback_days` of pair-windows). Development stops at the test start; the bundle carries that state;
+  scoring runs continue it and refuse data that starts before it ends (report-only: skipped with a warning). Tests:
+  future rows do not change earlier outputs; a split run with carried state equals a single pass.
 
 ## Scores, bands and comparison (ADR-027, ADR-028)
 - `raw = -score_samples` (higher = more anomalous) for both models; raw scales differ between models, so the report
@@ -71,6 +91,17 @@ score every window (Arrow batches, raw = -score_samples)  ->  bands from validat
   chart data (e.g. a 50,000-row hexbin sample). One-Class SVM fit cost is roughly quadratic in training rows and
   scoring cost is proportional to support vectors x rows; both are bounded by configuration.
 - Not yet measured on a real year; `profile` reports the expected number of feature rows first.
+
+## Model bundle and scoring runs (ADR-032)
+`bundles/<experiment id>-b<hash of cutoffs + relationship settings>/`: `bundle.json` (ordered model inputs, field
+mapping and required fields, window, periods incl. the reserved test range, model settings and sha256, band settings,
+validation cutoffs and percentile grids, versions, code commit, config snapshot, relationship settings and history
+bounds), `models/*.joblib|json`, `train_stats.parquet` (per-feature training min/max, median, robust scale),
+`train_entities.parquet` (per-host training context), `relationships/state/`. No flow rows; the entity table and the
+relationship state are derived aggregates containing IPs, so bundles stay outside the checkout.
+`scoring/<kind>-<bundle id>-<hash>/`: scores_raw / scores / alerts / summaries, `run.json`, report, relationships.
+Compatibility: every required canonical field must come from the same source column and be usable, else nothing is
+scored; pipelines must expect exactly the bundle's ordered inputs.
 
 ## Artifacts (development format, ADR-014)
 `experiments/<id>/models/<model>.joblib` (whole pipeline) + `<model>.json`; `manifest.json` records inputs

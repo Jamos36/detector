@@ -23,6 +23,7 @@ from netanomaly.source import Source
 from netanomaly.splits import Period, period_case_sql
 
 SCORES, ALERTS, DAILY, ENTITY = "scores.parquet", "alerts.parquet", "daily_summary.parquet", "entity_summary.parquet"
+TRAIN_STATS, TRAIN_ENTITIES = "train_stats.parquet", "train_entities.parquet"
 FLAGGED = ", ".join(repr(b) for b in BAND_ORDER)
 CONTEXT_FEATURES = ("flows", "bytes_total", "uniq_dst_ip", "uniq_dst_port")
 
@@ -48,10 +49,26 @@ def beyond_range_sql(features: list[str]) -> tuple[str, str]:
     return stats, f"list_filter([{flags}], x -> x IS NOT NULL)"
 
 
+def write_training_reference(con: duckdb.DuckDBPyConnection, table: FeatureTable, train_period_where: str,
+                             train_where: str, model_features: list[str], out_dir: Path) -> tuple[Path, Path]:
+    """Small training-period summaries that scoring outputs compare against (and that model bundles carry, so later
+    scoring never needs training rows): one row of per-feature min/max (training filter) and median/robust scale
+    (whole training period), and per host the training window count and medians of the context features."""
+    stats, _ = beyond_range_sql(model_features)
+    stats_path, entity_path = out_dir / TRAIN_STATS, out_dir / TRAIN_ENTITIES
+    _copy(con, f"SELECT * FROM (SELECT {stats} FROM {table.relation()} WHERE {train_where}) CROSS JOIN "
+               f"({_training_stats_sql(table.relation(), model_features, train_period_where)})", stats_path)
+    ctx = [f for f in CONTEXT_FEATURES if f in table.features]
+    entity = "".join(f", median({f}) AS train_median_{f}" for f in ctx)
+    _copy(con, f"SELECT src_ip, count(*) AS train_windows{entity} FROM {table.relation()} "
+               f"WHERE {train_period_where} GROUP BY src_ip ORDER BY src_ip", entity_path)
+    return stats_path, entity_path
+
+
 def write_scores(con: duckdb.DuckDBPyConnection, table: FeatureTable, scores_raw: Path, periods: list[Period],
                  annotations: list[Annotation], buffer_hours: int, cutoffs: list[Cutoffs],
                  grids: dict[str, list[tuple[float, float]]], out: Path, model_features: list[str],
-                 train_where: str) -> int:
+                 train_stats: Path) -> int:
     joins, cols = [], []
     for c in cutoffs:
         m = c.model_id
@@ -60,9 +77,9 @@ def write_scores(con: duckdb.DuckDBPyConnection, table: FeatureTable, scores_raw
         joins.append(f"ASOF LEFT JOIN grid_{m} g_{m} ON s.{m}_raw >= g_{m}.score")
         cols += [f"s.{m}_raw", f"coalesce(g_{m}.pct, 0.0) AS {m}_pct", f"{band_sql(f's.{m}_raw', c)} AS {m}_band"]
     feats = ", ".join(f"f.{x}" for x in table.features)
-    stats, beyond = beyond_range_sql(model_features)
+    _, beyond = beyond_range_sql(model_features)
     sql = f"""
-WITH tr AS (SELECT {stats} FROM {table.relation()} WHERE {train_where})
+WITH tr AS (SELECT * FROM {parquet(train_stats)})
 SELECT f.src_ip, f.window_start, f.window_end, f.flow_date, {period_case_sql(periods, 'f.window_start')} AS period,
   {category_sql('f.window_start', 'f.window_end', annotations, buffer_hours)} AS annotation_category,
   {names_sql('f.window_start', 'f.window_end', annotations, buffer_hours)} AS annotation_names,
@@ -77,14 +94,14 @@ def _transformed(feature: str, col: str) -> str:
     return f"ln(1 + greatest({col}, 0))" if FEATURE_BY_NAME[feature].log1p else f"{col}::DOUBLE"
 
 
-def _training_stats_sql(scores: str, features: list[str]) -> str:
+def _training_stats_sql(rel: str, features: list[str], train_period_where: str) -> str:
     parts = []
     for f in features:
         t = _transformed(f, f)
         parts += [f"median({t}) AS med_{f}",
                   (f"coalesce(nullif((quantile_cont({t}, 0.75) - quantile_cont({t}, 0.25)) / 1.349, 0), "
                   f"nullif(stddev_pop({t}), 0)) AS scale_{f}")]
-    return f"SELECT {', '.join(parts)} FROM {scores} WHERE period = 'train'"
+    return f"SELECT {', '.join(parts)} FROM {rel} WHERE {train_period_where}"
 
 
 def _deviation_sql(features: list[str]) -> str:
@@ -102,10 +119,9 @@ def _deviation_sql(features: list[str]) -> str:
 
 def write_alerts(con: duckdb.DuckDBPyConnection, scores: Path, source: Source, models: list[str],
                  model_features: list[str], all_features: list[str], out: Path, trace_top_n: int,
-                 trace_rows: int) -> int:
+                 trace_rows: int, train_stats: Path, train_entities: Path) -> int:
     rel = parquet(scores)
     ctx = [f for f in CONTEXT_FEATURES if f in all_features]
-    entity = "".join(f", median({f}) AS train_median_{f}" for f in ctx)
     entity_cols = "".join(f"e.train_median_{f} AS entity_train_median_{f}, " for f in ctx)
     flagged_any = " OR ".join(f"{m}_band IN ({FLAGGED})" for m in models)
     best = "CASE " + " ".join(f"WHEN {' OR '.join(f'{m}_band = {b!r}' for m in models)} THEN '{b}'"
@@ -116,8 +132,8 @@ def write_alerts(con: duckdb.DuckDBPyConnection, scores: Path, source: Source, m
     pct_sum = " + ".join(f"{m}_pct" for m in models)
     con.execute(f"""
 CREATE OR REPLACE TEMP TABLE poc_alerts AS
-WITH t AS ({_training_stats_sql(rel, model_features)}),
-e AS (SELECT src_ip, count(*) AS train_windows{entity} FROM {rel} WHERE period = 'train' GROUP BY src_ip)
+WITH t AS (SELECT * FROM {parquet(train_stats)}),
+e AS (SELECT * FROM {parquet(train_entities)})
 SELECT s.*, {best} AS review_band, {in_review} AS models_in_review, {max_pct} AS max_pct,
   row_number() OVER (ORDER BY {max_pct} DESC, {pct_sum} DESC, s.src_ip, s.window_start) AS alert_rank,
   e.train_windows IS NOT NULL AS entity_seen_in_train, coalesce(e.train_windows, 0) AS entity_train_windows,
