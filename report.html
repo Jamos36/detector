@@ -1,0 +1,1931 @@
+<!doctype html>
+<html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>demo-14ab7a19d5</title><style>
+body { font: 15px/1.5 system-ui, -apple-system, Segoe UI, sans-serif; color: #0b0b0b; background: #fcfcfb;
+       max-width: 1200px; margin: 0 auto; padding: 16px 24px 64px; }
+h1 { font-size: 1.6em; } h2 { margin-top: 2.2em; border-bottom: 1px solid #e4e3df; padding-bottom: 4px; }
+img { max-width: 100%; height: auto; display: block; margin: 12px 0; }
+table { border-collapse: collapse; font-size: 13px; margin: 12px 0; display: block; overflow-x: auto; }
+th, td { border: 1px solid #e4e3df; padding: 4px 8px; text-align: left; vertical-align: top; }
+th { background: #f0efec; } tr:nth-child(even) td { background: #f7f7f5; }
+blockquote { border-left: 4px solid #2a78d6; margin: 12px 0; padding: 4px 16px; background: #eef4fd; }
+code { background: #f0efec; padding: 1px 4px; border-radius: 3px; font-size: 90%; }
+</style></head><body>
+<h1>Anomaly-ranking experiment <code>demo-14ab7a19d5</code></h1>
+<blockquote>
+<p><strong>How to read this report.</strong> Scores are <em>rankings</em> from unsupervised models (higher = more anomalous), not probabilities. Critical/High/Medium/Low are review bands calibrated on a reference period, not severities; <code>Benign</code> means <em>below the review threshold</em>, not <em>safe</em>. Supplied pentest date ranges are broad, weak temporal context: a window inside one is not a confirmed attack, and activity outside them is not cleared. Nothing here is accuracy, precision, recall or a false-positive rate - there are no reliable labels.</p>
+<p><strong>Mock/synthetic input</strong> (<code>allow_inside_repo: true</code>): results describe fixture or demo data, not any real network.</p>
+</blockquote>
+<ul>
+<li>Generated: 2026-09-29T01:20:48.583994+00:00 (UTC). Code: 78f2d313efedd74e041d5be00403ed9f57de6f66 (src has uncommitted changes).</li>
+<li>Input: 6 Parquet files, 388,749 flows in 118,584 host x 15-min windows, 300 hosts, 2026-09-01 00:00:00+00 .. 2026-09-07 00:00:00+00 (UTC).</li>
+<li>Model inputs (11): <code>flows</code>, <code>bytes_total</code>, <code>packets_total</code>, <code>max_flow_bytes</code>, <code>bytes_per_packet</code>, <code>uniq_dst_ip</code>, <code>uniq_dst_port</code>, <code>internal_share</code>, <code>tcp_share</code>, <code>udp_share</code>, <code>mean_duration_s</code>.</li>
+<li>Models: iforest, ocsvm. Bands calibrated on: validation (quantile mode).</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>period</th>
+<th>UTC start</th>
+<th>UTC end (excl.)</th>
+<th>windows</th>
+<th>days with data</th>
+<th>hosts</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>train</td>
+<td>2026-09-01</td>
+<td>2026-09-03</td>
+<td>39433</td>
+<td>2</td>
+<td>300</td>
+</tr>
+<tr>
+<td>validation</td>
+<td>2026-09-03</td>
+<td>2026-09-04</td>
+<td>19778</td>
+<td>1</td>
+<td>300</td>
+</tr>
+<tr>
+<td>test</td>
+<td>2026-09-04</td>
+<td>2026-09-07</td>
+<td>59373</td>
+<td>3</td>
+<td>300</td>
+</tr>
+</tbody>
+</table>
+<p>Scores on the training period are in-sample (exploratory only); validation calibrates the bands; test simulates later deployment.</p>
+<p><strong>Warnings</strong></p>
+<ul>
+<li>feature icmp_share dropped: constant on training rows</li>
+</ul>
+<h2>1. Overview</h2>
+<p><img alt="overview" src="charts/overview.svg" /></p>
+<p>Daily flow volume (top) and windows in any review band per model (bottom). Shaded ranges are the supplied pentest dates (grey) and their buffers (hatched).</p>
+<h2>2. Highest-ranked periods (finer resolution)</h2>
+<p>Up to 3 periods of 48 h centred on the highest reference percentile across models, at least 48 h apart. Bucket = one 15-minute window; each point is the highest-ranked host in that bucket.</p>
+<p><img alt="zoom 1" src="charts/zoom_1.svg" /></p>
+<p>Top window: <code>10.10.5.36</code> at 2026-09-05 01:00 UTC (max reference percentile 1.00000). Annotation context within the plotted range: demo-injected-attack-days (inside known pentest window).</p>
+<p><img alt="zoom 2" src="charts/zoom_2.svg" /></p>
+<p>Top window: <code>10.10.1.46</code> at 2026-09-02 09:15 UTC (max reference percentile 1.00000). Annotation context within the plotted range: no supplied interval.</p>
+<h2>3. Review bands over time and alert volume</h2>
+<p><img alt="bands" src="charts/bands_over_time.svg" /></p>
+<p><img alt="cutoffs" src="charts/cutoff_curve.svg" /></p>
+<p>Band cutoffs (raw-score thresholds from reference-period quantiles; change them with <code>netanomaly report --bands FILE</code> without retraining):</p>
+<table>
+<thead>
+<tr>
+<th>model</th>
+<th>reference</th>
+<th>rows</th>
+<th>mode</th>
+<th>Critical: q / raw &gt;=</th>
+<th>High: q / raw &gt;=</th>
+<th>Medium: q / raw &gt;=</th>
+<th>Low: q / raw &gt;=</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>iforest</td>
+<td>validation</td>
+<td>19,778</td>
+<td>quantile</td>
+<td>0.99900 / 0.64562</td>
+<td>0.99500 / 0.62615</td>
+<td>0.99000 / 0.61154</td>
+<td>0.97500 / 0.58733</td>
+</tr>
+<tr>
+<td>ocsvm</td>
+<td>validation</td>
+<td>19,778</td>
+<td>quantile</td>
+<td>0.99900 / -71.208</td>
+<td>0.99500 / -101.91</td>
+<td>0.99000 / -111.93</td>
+<td>0.97500 / -121.92</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>model</th>
+<th>period</th>
+<th>band</th>
+<th>windows</th>
+<th>per day</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>iforest</td>
+<td>test</td>
+<td>Critical</td>
+<td>65</td>
+<td>21.67</td>
+</tr>
+<tr>
+<td>iforest</td>
+<td>test</td>
+<td>High</td>
+<td>226</td>
+<td>75.33</td>
+</tr>
+<tr>
+<td>iforest</td>
+<td>test</td>
+<td>Medium</td>
+<td>365</td>
+<td>121.7</td>
+</tr>
+<tr>
+<td>iforest</td>
+<td>test</td>
+<td>Low</td>
+<td>967</td>
+<td>322.3</td>
+</tr>
+<tr>
+<td>iforest</td>
+<td>train</td>
+<td>Critical</td>
+<td>38</td>
+<td>19</td>
+</tr>
+<tr>
+<td>iforest</td>
+<td>train</td>
+<td>High</td>
+<td>143</td>
+<td>71.5</td>
+</tr>
+<tr>
+<td>iforest</td>
+<td>train</td>
+<td>Medium</td>
+<td>246</td>
+<td>123</td>
+</tr>
+<tr>
+<td>iforest</td>
+<td>train</td>
+<td>Low</td>
+<td>665</td>
+<td>332.5</td>
+</tr>
+<tr>
+<td>iforest</td>
+<td>validation</td>
+<td>Critical</td>
+<td>20</td>
+<td>20</td>
+</tr>
+<tr>
+<td>iforest</td>
+<td>validation</td>
+<td>High</td>
+<td>79</td>
+<td>79</td>
+</tr>
+<tr>
+<td>iforest</td>
+<td>validation</td>
+<td>Medium</td>
+<td>99</td>
+<td>99</td>
+</tr>
+<tr>
+<td>iforest</td>
+<td>validation</td>
+<td>Low</td>
+<td>297</td>
+<td>297</td>
+</tr>
+<tr>
+<td>ocsvm</td>
+<td>test</td>
+<td>Critical</td>
+<td>135</td>
+<td>45</td>
+</tr>
+<tr>
+<td>ocsvm</td>
+<td>test</td>
+<td>High</td>
+<td>325</td>
+<td>108.3</td>
+</tr>
+<tr>
+<td>ocsvm</td>
+<td>test</td>
+<td>Medium</td>
+<td>324</td>
+<td>108</td>
+</tr>
+<tr>
+<td>ocsvm</td>
+<td>test</td>
+<td>Low</td>
+<td>928</td>
+<td>309.3</td>
+</tr>
+<tr>
+<td>ocsvm</td>
+<td>train</td>
+<td>Critical</td>
+<td>43</td>
+<td>21.5</td>
+</tr>
+<tr>
+<td>ocsvm</td>
+<td>train</td>
+<td>High</td>
+<td>197</td>
+<td>98.5</td>
+</tr>
+<tr>
+<td>ocsvm</td>
+<td>train</td>
+<td>Medium</td>
+<td>211</td>
+<td>105.5</td>
+</tr>
+<tr>
+<td>ocsvm</td>
+<td>train</td>
+<td>Low</td>
+<td>572</td>
+<td>286</td>
+</tr>
+<tr>
+<td>ocsvm</td>
+<td>validation</td>
+<td>Critical</td>
+<td>20</td>
+<td>20</td>
+</tr>
+<tr>
+<td>ocsvm</td>
+<td>validation</td>
+<td>High</td>
+<td>79</td>
+<td>79</td>
+</tr>
+<tr>
+<td>ocsvm</td>
+<td>validation</td>
+<td>Medium</td>
+<td>99</td>
+<td>99</td>
+</tr>
+<tr>
+<td>ocsvm</td>
+<td>validation</td>
+<td>Low</td>
+<td>297</td>
+<td>297</td>
+</tr>
+</tbody>
+</table>
+<h2>4. Score distributions</h2>
+<p><img alt="scores" src="charts/score_distribution.svg" /></p>
+<p>Score direction for both models: <code>raw = -score_samples(x)</code>, higher = more anomalous. A test distribution shifted right of validation means more windows look unusual than during calibration (drift or new activity), so the bands fire more often.</p>
+<h2>5. Hosts x time</h2>
+<p><img alt="iforest heatmap" src="charts/heatmap_iforest.svg" /></p>
+<p><img alt="ocsvm heatmap" src="charts/heatmap_ocsvm.svg" /></p>
+<p>Hosts with the most review-band windows (all periods):</p>
+<table>
+<thead>
+<tr>
+<th>host</th>
+<th>windows</th>
+<th>train windows</th>
+<th>iforest review</th>
+<th>ocsvm review</th>
+<th>iforest review inside ranges</th>
+<th>ocsvm review inside ranges</th>
+<th>iforest max pct</th>
+<th>ocsvm max pct</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>10.10.1.49</td>
+<td>345</td>
+<td>115</td>
+<td>86</td>
+<td>117</td>
+<td>50</td>
+<td>68</td>
+<td>0.9998</td>
+<td>0.9999</td>
+</tr>
+<tr>
+<td>10.10.1.47</td>
+<td>344</td>
+<td>121</td>
+<td>84</td>
+<td>109</td>
+<td>36</td>
+<td>46</td>
+<td>1</td>
+<td>1</td>
+</tr>
+<tr>
+<td>10.10.1.44</td>
+<td>328</td>
+<td>113</td>
+<td>77</td>
+<td>105</td>
+<td>37</td>
+<td>54</td>
+<td>1</td>
+<td>0.9997</td>
+</tr>
+<tr>
+<td>10.10.1.45</td>
+<td>347</td>
+<td>113</td>
+<td>78</td>
+<td>104</td>
+<td>40</td>
+<td>48</td>
+<td>0.9999</td>
+<td>1</td>
+</tr>
+<tr>
+<td>10.10.1.41</td>
+<td>349</td>
+<td>121</td>
+<td>70</td>
+<td>101</td>
+<td>33</td>
+<td>55</td>
+<td>0.9995</td>
+<td>1</td>
+</tr>
+<tr>
+<td>10.10.1.46</td>
+<td>342</td>
+<td>118</td>
+<td>72</td>
+<td>97</td>
+<td>34</td>
+<td>41</td>
+<td>0.9999</td>
+<td>1</td>
+</tr>
+<tr>
+<td>10.10.1.42</td>
+<td>338</td>
+<td>113</td>
+<td>70</td>
+<td>92</td>
+<td>36</td>
+<td>48</td>
+<td>1</td>
+<td>0.9999</td>
+</tr>
+<tr>
+<td>10.10.1.40</td>
+<td>344</td>
+<td>114</td>
+<td>67</td>
+<td>94</td>
+<td>38</td>
+<td>54</td>
+<td>0.9999</td>
+<td>1</td>
+</tr>
+<tr>
+<td>10.10.1.43</td>
+<td>350</td>
+<td>116</td>
+<td>62</td>
+<td>96</td>
+<td>33</td>
+<td>45</td>
+<td>1</td>
+<td>0.9998</td>
+</tr>
+<tr>
+<td>10.10.1.48</td>
+<td>355</td>
+<td>116</td>
+<td>53</td>
+<td>82</td>
+<td>29</td>
+<td>44</td>
+<td>0.9996</td>
+<td>1</td>
+</tr>
+<tr>
+<td>10.10.5.28</td>
+<td>390</td>
+<td>125</td>
+<td>9</td>
+<td>34</td>
+<td>3</td>
+<td>29</td>
+<td>0.9999</td>
+<td>0.9999</td>
+</tr>
+<tr>
+<td>10.10.4.244</td>
+<td>385</td>
+<td>120</td>
+<td>8</td>
+<td>34</td>
+<td>4</td>
+<td>31</td>
+<td>0.9974</td>
+<td>0.9999</td>
+</tr>
+<tr>
+<td>10.10.20.32</td>
+<td>572</td>
+<td>191</td>
+<td>23</td>
+<td>15</td>
+<td>11</td>
+<td>6</td>
+<td>0.9993</td>
+<td>0.9968</td>
+</tr>
+<tr>
+<td>10.10.4.199</td>
+<td>355</td>
+<td>118</td>
+<td>6</td>
+<td>32</td>
+<td>3</td>
+<td>27</td>
+<td>0.9994</td>
+<td>0.9999</td>
+</tr>
+<tr>
+<td>10.10.20.16</td>
+<td>570</td>
+<td>189</td>
+<td>18</td>
+<td>15</td>
+<td>8</td>
+<td>11</td>
+<td>0.999</td>
+<td>0.9997</td>
+</tr>
+</tbody>
+</table>
+<h2>6. Ranked candidate windows</h2>
+<p>Top 25 review-band windows by highest reference percentile across models (all of them: <code>alerts.parquet</code>). <em>Largest deviations</em> are robust z-scores against training medians on the model's input scale - context for the analyst, not model attributions. Traces give source files and 0-based row indexes (<code>trace_rows</code> in alerts.parquet).</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>host</th>
+<th>window (UTC)</th>
+<th>period</th>
+<th>annotation context</th>
+<th>best band</th>
+<th>models</th>
+<th>iforest pct</th>
+<th>ocsvm pct</th>
+<th>flows</th>
+<th>largest deviations</th>
+<th>beyond training range</th>
+<th>host baseline</th>
+<th>trace</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>10.10.1.47</td>
+<td>2026-09-03 15:00</td>
+<td>validation</td>
+<td>buffer / uncertain</td>
+<td>Critical</td>
+<td>iforest,ocsvm</td>
+<td>1.00000</td>
+<td>0.99995</td>
+<td>9</td>
+<td>mean_duration_s=1016.58 (z +6.5); packets_total=4028.0 (z +2.7); max_flow_bytes=1076411.0 (z +2.5)</td>
+<td>-</td>
+<td>121 train windows; flows median 2, uniq_dst_ip median 2</td>
+<td>9 flows; 1 file(s); first synth_netflow_20260903.parquet#38970</td>
+</tr>
+<tr>
+<td>2</td>
+<td>10.10.1.43</td>
+<td>2026-09-04 14:00</td>
+<td>test</td>
+<td>inside known pentest window</td>
+<td>Critical</td>
+<td>iforest,ocsvm</td>
+<td>1.00000</td>
+<td>0.99985</td>
+<td>10</td>
+<td>mean_duration_s=309.57 (z +5.1); packets_total=4941.0 (z +2.8); bytes_per_packet=239.96 (z -2.7)</td>
+<td>-</td>
+<td>116 train windows; flows median 2, uniq_dst_ip median 2</td>
+<td>10 flows; 1 file(s); first synth_netflow_20260904.parquet#31495</td>
+</tr>
+<tr>
+<td>3</td>
+<td>10.10.2.126</td>
+<td>2026-09-06 04:00</td>
+<td>test</td>
+<td>inside known pentest window</td>
+<td>Critical</td>
+<td>iforest,ocsvm</td>
+<td>0.99980</td>
+<td>1.00000</td>
+<td>14</td>
+<td>max_flow_bytes=79275306.0 (z +5.5); bytes_total=352424659.0 (z +5.4); packets_total=251724.0 (z +5.3)</td>
+<td>bytes_total, packets_total, max_flow_bytes</td>
+<td>124 train windows; flows median 2, uniq_dst_ip median 2</td>
+<td>14 flows; 1 file(s); first synth_netflow_20260906.parquet#4787</td>
+</tr>
+<tr>
+<td>4</td>
+<td>10.10.5.36</td>
+<td>2026-09-05 01:00</td>
+<td>test</td>
+<td>inside known pentest window</td>
+<td>Critical</td>
+<td>iforest,ocsvm</td>
+<td>0.99980</td>
+<td>1.00000</td>
+<td>300</td>
+<td>uniq_dst_port=300.0 (z +9.0); bytes_per_packet=60.0 (z -6.5); flows=300.0 (z +5.3)</td>
+<td>flows, uniq_dst_port</td>
+<td>122 train windows; flows median 2, uniq_dst_ip median 2</td>
+<td>300 flows; 1 file(s); first synth_netflow_20260905.parquet#1032</td>
+</tr>
+<tr>
+<td>5</td>
+<td>10.10.1.44</td>
+<td>2026-09-05 15:00</td>
+<td>test</td>
+<td>inside known pentest window</td>
+<td>Critical</td>
+<td>iforest,ocsvm</td>
+<td>1.00000</td>
+<td>0.99970</td>
+<td>13</td>
+<td>mean_duration_s=107.43 (z +3.9); packets_total=4499.0 (z +2.8); bytes_per_packet=281.15 (z -2.3)</td>
+<td>-</td>
+<td>113 train windows; flows median 2, uniq_dst_ip median 2</td>
+<td>13 flows; 1 file(s); first synth_netflow_20260905.parquet#39480</td>
+</tr>
+<tr>
+<td>6</td>
+<td>10.10.1.46</td>
+<td>2026-09-02 09:15</td>
+<td>train</td>
+<td>outside supplied windows</td>
+<td>Critical</td>
+<td>iforest,ocsvm</td>
+<td>0.99960</td>
+<td>1.00000</td>
+<td>1</td>
+<td>mean_duration_s=2438.05 (z +7.5); bytes_per_packet=60.0 (z -6.5); max_flow_bytes=120.0 (z -3.6)</td>
+<td>-</td>
+<td>118 train windows; flows median 2, uniq_dst_ip median 2</td>
+<td>1 flows; 1 file(s); first synth_netflow_20260902.parquet#10747</td>
+</tr>
+<tr>
+<td>7</td>
+<td>10.10.2.74</td>
+<td>2026-09-05 18:15</td>
+<td>test</td>
+<td>inside known pentest window</td>
+<td>Critical</td>
+<td>iforest,ocsvm</td>
+<td>0.99960</td>
+<td>1.00000</td>
+<td>15</td>
+<td>max_flow_bytes=88475991.0 (z +5.5); bytes_total=306870282.0 (z +5.3); packets_total=219225.0 (z +5.2)</td>
+<td>bytes_total, packets_total, max_flow_bytes</td>
+<td>122 train windows; flows median 2, uniq_dst_ip median 2</td>
+<td>15 flows; 1 file(s); first synth_netflow_20260905.parquet#56468</td>
+</tr>
+<tr>
+<td>8</td>
+<td>10.10.2.74</td>
+<td>2026-09-05 18:00</td>
+<td>test</td>
+<td>inside known pentest window</td>
+<td>Critical</td>
+<td>iforest,ocsvm</td>
+<td>0.99934</td>
+<td>1.00000</td>
+<td>11</td>
+<td>bytes_total=193225192.0 (z +5.1); max_flow_bytes=44593305.0 (z +5.1); packets_total=138026.0 (z +4.9)</td>
+<td>bytes_total, packets_total, max_flow_bytes</td>
+<td>122 train windows; flows median 2, uniq_dst_ip median 2</td>
+<td>11 flows; 1 file(s); first synth_netflow_20260905.parquet#55733</td>
+</tr>
+<tr>
+<td>9</td>
+<td>10.10.4.222</td>
+<td>2026-09-04 07:00</td>
+<td>test</td>
+<td>inside known pentest window</td>
+<td>Critical</td>
+<td>iforest,ocsvm</td>
+<td>0.99934</td>
+<td>1.00000</td>
+<td>120</td>
+<td>bytes_per_packet=60.0 (z -6.5); uniq_dst_ip=120.0 (z +5.4); flows=120.0 (z +4.2)</td>
+<td>flows, uniq_dst_ip</td>
+<td>132 train windows; flows median 2, uniq_dst_ip median 2</td>
+<td>120 flows; 1 file(s); first synth_netflow_20260904.parquet#7875</td>
+</tr>
+<tr>
+<td>10</td>
+<td>10.10.1.46</td>
+<td>2026-09-04 21:00</td>
+<td>test</td>
+<td>inside known pentest window</td>
+<td>Critical</td>
+<td>iforest,ocsvm</td>
+<td>0.99929</td>
+<td>1.00000</td>
+<td>1</td>
+<td>bytes_per_packet=60.0 (z -6.5); mean_duration_s=460.09 (z +5.6); max_flow_bytes=120.0 (z -3.6)</td>
+<td>-</td>
+<td>118 train windows; flows median 2, uniq_dst_ip median 2</td>
+<td>1 flows; 1 file(s); first synth_netflow_20260904.parquet#61994</td>
+</tr>
+<tr>
+<td>11</td>
+<td>10.10.1.48</td>
+<td>2026-09-05 14:15</td>
+<td>test</td>
+<td>inside known pentest window</td>
+<td>Critical</td>
+<td>iforest,ocsvm</td>
+<td>0.99929</td>
+<td>1.00000</td>
+<td>2</td>
+<td>mean_duration_s=571.31 (z +5.8); bytes_per_packet=80.67 (z -5.7); max_flow_bytes=122.0 (z -3.6)</td>
+<td>-</td>
+<td>116 train windows; flows median 2, uniq_dst_ip median 2</td>
+<td>2 flows; 1 file(s); first synth_netflow_20260905.parquet#34414</td>
+</tr>
+<tr>
+<td>12</td>
+<td>10.10.1.40</td>
+<td>2026-09-05 10:30</td>
+<td>test</td>
+<td>inside known pentest window</td>
+<td>Critical</td>
+<td>iforest,ocsvm</td>
+<td>0.99914</td>
+<td>1.00000</td>
+<td>2</td>
+<td>bytes_per_packet=70.67 (z -6.1); mean_duration_s=396.98 (z +5.4); max_flow_bytes=120.0 (z -3.6)</td>
+<td>-</td>
+<td>114 train windows; flows median 2, uniq_dst_ip median 2</td>
+<td>2 flows; 1 file(s); first synth_netflow_20260905.parquet#14871</td>
+</tr>
+<tr>
+<td>13</td>
+<td>10.10.1.42</td>
+<td>2026-09-01 14:00</td>
+<td>train</td>
+<td>outside supplied windows</td>
+<td>Critical</td>
+<td>iforest,ocsvm</td>
+<td>1.00000</td>
+<td>0.99899</td>
+<td>10</td>
+<td>mean_duration_s=359.37 (z +5.3); max_flow_bytes=559426.0 (z +2.1); packets_total=1582.0 (z +2.1)</td>
+<td>-</td>
+<td>113 train windows; flows median 2, uniq_dst_ip median 2</td>
+<td>10 flows; 1 file(s); first synth_netflow_20260901.parquet#31386</td>
+</tr>
+<tr>
+<td>14</td>
+<td>10.10.1.45</td>
+<td>2026-09-06 07:45</td>
+<td>test</td>
+<td>inside known pentest window</td>
+<td>Critical</td>
+<td>iforest,ocsvm</td>
+<td>0.99874</td>
+<td>1.00000</td>
+<td>1</td>
+<td>bytes_per_packet=60.0 (z -6.5); max_flow_bytes=120.0 (z -3.6); mean_duration_s=73.78 (z +3.5)</td>
+<td>-</td>
+<td>113 train windows; flows median 2, uniq_dst_ip median 2</td>
+<td>1 flows; 1 file(s); first synth_netflow_20260906.parquet#9249</td>
+</tr>
+<tr>
+<td>15</td>
+<td>10.10.5.36</td>
+<td>2026-09-05 07:00</td>
+<td>test</td>
+<td>inside known pentest window</td>
+<td>Critical</td>
+<td>iforest,ocsvm</td>
+<td>0.99869</td>
+<td>1.00000</td>
+<td>300</td>
+<td>flows=300.0 (z +5.3); bytes_per_packet=168.43 (z -3.7); packets_total=3620.0 (z +2.6)</td>
+<td>flows</td>
+<td>122 train windows; flows median 2, uniq_dst_ip median 2</td>
+<td>300 flows; 1 file(s); first synth_netflow_20260905.parquet#8155</td>
+</tr>
+<tr>
+<td>16</td>
+<td>10.10.2.79</td>
+<td>2026-09-04 12:15</td>
+<td>test</td>
+<td>inside known pentest window</td>
+<td>Critical</td>
+<td>iforest,ocsvm</td>
+<td>0.99863</td>
+<td>1.00000</td>
+<td>16</td>
+<td>max_flow_bytes=95018333.0 (z +5.6); bytes_total=393187488.0 (z +5.5); packets_total=280851.0 (z +5.4)</td>
+<td>bytes_total, packets_total, max_flow_bytes</td>
+<td>118 train windows; flows median 2, uniq_dst_ip median 2</td>
+<td>16 flows; 1 file(s); first synth_netflow_20260904.parquet#20688</td>
+</tr>
+<tr>
+<td>17</td>
+<td>10.10.2.126</td>
+<td>2026-09-06 04:15</td>
+<td>test</td>
+<td>inside known pentest window</td>
+<td>Critical</td>
+<td>iforest,ocsvm</td>
+<td>0.99793</td>
+<td>1.00000</td>
+<td>7</td>
+<td>max_flow_bytes=61855527.0 (z +5.3); bytes_total=147575427.0 (z +4.9); packets_total=105409.0 (z +4.7)</td>
+<td>bytes_total, packets_total, max_flow_bytes</td>
+<td>124 train windows; flows median 2, uniq_dst_ip median 2</td>
+<td>7 flows; 1 file(s); first synth_netflow_20260906.parquet#5130</td>
+</tr>
+<tr>
+<td>18</td>
+<td>10.10.2.79</td>
+<td>2026-09-04 12:00</td>
+<td>test</td>
+<td>inside known pentest window</td>
+<td>Critical</td>
+<td>iforest,ocsvm</td>
+<td>0.99752</td>
+<td>1.00000</td>
+<td>10</td>
+<td>max_flow_bytes=70118055.0 (z +5.4); bytes_total=106896691.0 (z +4.7); packets_total=76420.0 (z +4.5)</td>
+<td>bytes_total, packets_total, max_flow_bytes</td>
+<td>118 train windows; flows median 2, uniq_dst_ip median 2</td>
+<td>10 flows; 1 file(s); first synth_netflow_20260904.parquet#19218</td>
+</tr>
+<tr>
+<td>19</td>
+<td>10.10.5.41</td>
+<td>2026-09-04 04:00</td>
+<td>test</td>
+<td>inside known pentest window</td>
+<td>Critical</td>
+<td>iforest,ocsvm</td>
+<td>0.99752</td>
+<td>1.00000</td>
+<td>301</td>
+<td>flows=301.0 (z +5.3); bytes_per_packet=170.29 (z -3.7); packets_total=3575.0 (z +2.6)</td>
+<td>flows</td>
+<td>128 train windows; flows median 2, uniq_dst_ip median 2</td>
+<td>301 flows; 1 file(s); first synth_netflow_20260904.parquet#4280</td>
+</tr>
+<tr>
+<td>20</td>
+<td>10.10.3.166</td>
+<td>2026-09-03 21:00</td>
+<td>validation</td>
+<td>buffer / uncertain</td>
+<td>Critical</td>
+<td>iforest,ocsvm</td>
+<td>0.99732</td>
+<td>1.00000</td>
+<td>1</td>
+<td>bytes_per_packet=60.0 (z -6.5); max_flow_bytes=60.0 (z -4.1); bytes_total=60.0 (z -3.8)</td>
+<td>-</td>
+<td>129 train windows; flows median 2, uniq_dst_ip median 2</td>
+<td>1 flows; 1 file(s); first synth_netflow_20260903.parquet#60935</td>
+</tr>
+<tr>
+<td>21</td>
+<td>10.10.1.61</td>
+<td>2026-09-06 15:00</td>
+<td>test</td>
+<td>inside known pentest window</td>
+<td>Critical</td>
+<td>iforest,ocsvm</td>
+<td>0.99712</td>
+<td>1.00000</td>
+<td>307</td>
+<td>uniq_dst_port=302.0 (z +9.0); flows=307.0 (z +5.3); packets_total=797.0 (z +1.7)</td>
+<td>flows, uniq_dst_port</td>
+<td>116 train windows; flows median 3, uniq_dst_ip median 2</td>
+<td>307 flows; 1 file(s); first synth_netflow_20260906.parquet#39375</td>
+</tr>
+<tr>
+<td>22</td>
+<td>10.10.2.75</td>
+<td>2026-09-04 15:00</td>
+<td>test</td>
+<td>inside known pentest window</td>
+<td>Critical</td>
+<td>iforest,ocsvm</td>
+<td>0.99621</td>
+<td>1.00000</td>
+<td>306</td>
+<td>uniq_dst_port=302.0 (z +9.0); flows=306.0 (z +5.3); bytes_per_packet=172.57 (z -3.6)</td>
+<td>flows, uniq_dst_port</td>
+<td>121 train windows; flows median 2, uniq_dst_ip median 2</td>
+<td>306 flows; 1 file(s); first synth_netflow_20260904.parquet#38730</td>
+</tr>
+<tr>
+<td>23</td>
+<td>10.10.1.58</td>
+<td>2026-09-06 03:00</td>
+<td>test</td>
+<td>inside known pentest window</td>
+<td>Critical</td>
+<td>iforest,ocsvm</td>
+<td>0.99585</td>
+<td>1.00000</td>
+<td>301</td>
+<td>flows=301.0 (z +5.3); bytes_per_packet=217.79 (z -3.0); packets_total=3783.0 (z +2.6)</td>
+<td>flows</td>
+<td>127 train windows; flows median 3, uniq_dst_ip median 2</td>
+<td>301 flows; 1 file(s); first synth_netflow_20260906.parquet#3283</td>
+</tr>
+<tr>
+<td>24</td>
+<td>10.10.1.68</td>
+<td>2026-09-02 19:30</td>
+<td>train</td>
+<td>outside supplied windows</td>
+<td>Critical</td>
+<td>iforest,ocsvm</td>
+<td>0.99565</td>
+<td>1.00000</td>
+<td>1</td>
+<td>bytes_per_packet=60.0 (z -6.5); mean_duration_s=135.85 (z +4.2); max_flow_bytes=120.0 (z -3.6)</td>
+<td>-</td>
+<td>122 train windows; flows median 2, uniq_dst_ip median 2</td>
+<td>1 flows; 1 file(s); first synth_netflow_20260902.parquet#58538</td>
+</tr>
+<tr>
+<td>25</td>
+<td>10.10.1.41</td>
+<td>2026-09-01 06:30</td>
+<td>train</td>
+<td>outside supplied windows</td>
+<td>Critical</td>
+<td>iforest,ocsvm</td>
+<td>0.99277</td>
+<td>1.00000</td>
+<td>1</td>
+<td>mean_duration_s=11708.91 (z +9.3); bytes_per_packet=330.15 (z -1.9); packets_total=533.0 (z +1.4)</td>
+<td>-</td>
+<td>121 train windows; flows median 2, uniq_dst_ip median 2</td>
+<td>1 flows; 1 file(s); first synth_netflow_20260901.parquet#6916</td>
+</tr>
+</tbody>
+</table>
+<p><em>Beyond training range</em>: model inputs outside the training min/max. Isolation Forest cannot extrapolate (a value far beyond the training range scores like the most extreme training value), so such windows can rank lower than their novelty suggests. Outside training: 42 windows have at least one input beyond the training range; 2 of them are in no review band - filter <code>scores.parquet</code> on <code>len(beyond_train_range) &gt; 0</code> to review them.</p>
+<h2>7. iforest vs ocsvm</h2>
+<p><img alt="comparison" src="charts/model_comparison.svg" /></p>
+<p>Spearman = rank correlation over all windows of the period; top-N Jaccard = overlap of each model's 200 highest windows; daily top-20 overlap = mean share of each day's top windows the models share. Both see the same inputs but define 'unusual' differently (isolation depth vs distance from a learned boundary), so moderate agreement is expected; windows both rank high are the strongest candidates for review, not confirmed findings.</p>
+<table>
+<thead>
+<tr>
+<th>period</th>
+<th>windows</th>
+<th>spearman</th>
+<th>top-200 jaccard</th>
+<th>daily top-20 overlap</th>
+<th>both in review</th>
+<th>only iforest</th>
+<th>only ocsvm</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>test</td>
+<td>59373</td>
+<td>0.604</td>
+<td>0.1331</td>
+<td>0.2</td>
+<td>745</td>
+<td>878</td>
+<td>967</td>
+</tr>
+<tr>
+<td>train</td>
+<td>39433</td>
+<td>0.6012</td>
+<td>0.2085</td>
+<td>0.175</td>
+<td>451</td>
+<td>641</td>
+<td>572</td>
+</tr>
+<tr>
+<td>validation</td>
+<td>19778</td>
+<td>0.596</td>
+<td>0.1834</td>
+<td>0.25</td>
+<td>205</td>
+<td>290</td>
+<td>290</td>
+</tr>
+</tbody>
+</table>
+<p>Largest disagreements in the test period (in one model's top 15, not the other's):</p>
+<table>
+<thead>
+<tr>
+<th>kind</th>
+<th>host</th>
+<th>window (UTC)</th>
+<th>iforest pct</th>
+<th>ocsvm pct</th>
+<th>annotation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>top in iforest only</td>
+<td>10.10.1.43</td>
+<td>2026-09-04 14:00:00+00</td>
+<td>1</td>
+<td>0.9998</td>
+<td>inside</td>
+</tr>
+<tr>
+<td>top in ocsvm only</td>
+<td>10.10.2.75</td>
+<td>2026-09-04 15:00:00+00</td>
+<td>0.9962</td>
+<td>1</td>
+<td>inside</td>
+</tr>
+<tr>
+<td>top in iforest only</td>
+<td>10.10.1.44</td>
+<td>2026-09-05 15:00:00+00</td>
+<td>1</td>
+<td>0.9997</td>
+<td>inside</td>
+</tr>
+<tr>
+<td>top in iforest only</td>
+<td>10.10.1.45</td>
+<td>2026-09-04 15:00:00+00</td>
+<td>0.9999</td>
+<td>0.9983</td>
+<td>inside</td>
+</tr>
+<tr>
+<td>top in ocsvm only</td>
+<td>10.10.1.61</td>
+<td>2026-09-06 15:00:00+00</td>
+<td>0.9971</td>
+<td>1</td>
+<td>inside</td>
+</tr>
+<tr>
+<td>top in iforest only</td>
+<td>10.10.1.45</td>
+<td>2026-09-06 16:00:00+00</td>
+<td>0.9999</td>
+<td>0.9994</td>
+<td>inside</td>
+</tr>
+<tr>
+<td>top in ocsvm only</td>
+<td>10.10.4.222</td>
+<td>2026-09-04 07:00:00+00</td>
+<td>0.9993</td>
+<td>1</td>
+<td>inside</td>
+</tr>
+<tr>
+<td>top in iforest only</td>
+<td>10.10.1.40</td>
+<td>2026-09-04 15:15:00+00</td>
+<td>0.9999</td>
+<td>0.9992</td>
+<td>inside</td>
+</tr>
+<tr>
+<td>top in ocsvm only</td>
+<td>10.10.5.36</td>
+<td>2026-09-05 07:00:00+00</td>
+<td>0.9987</td>
+<td>1</td>
+<td>inside</td>
+</tr>
+<tr>
+<td>top in iforest only</td>
+<td>10.10.1.47</td>
+<td>2026-09-05 11:30:00+00</td>
+<td>0.9999</td>
+<td>0.9999</td>
+<td>inside</td>
+</tr>
+<tr>
+<td>top in ocsvm only</td>
+<td>10.10.4.223</td>
+<td>2026-09-05 03:00:00+00</td>
+<td>0.9916</td>
+<td>1</td>
+<td>inside</td>
+</tr>
+<tr>
+<td>top in iforest only</td>
+<td>10.10.5.28</td>
+<td>2026-09-05 13:45:00+00</td>
+<td>0.9999</td>
+<td>0.9999</td>
+<td>inside</td>
+</tr>
+<tr>
+<td>top in ocsvm only</td>
+<td>10.10.5.41</td>
+<td>2026-09-04 04:00:00+00</td>
+<td>0.9975</td>
+<td>1</td>
+<td>inside</td>
+</tr>
+<tr>
+<td>top in iforest only</td>
+<td>10.10.1.43</td>
+<td>2026-09-04 19:00:00+00</td>
+<td>0.9999</td>
+<td>0.9987</td>
+<td>inside</td>
+</tr>
+<tr>
+<td>top in ocsvm only</td>
+<td>10.10.5.35</td>
+<td>2026-09-06 07:00:00+00</td>
+<td>0.981</td>
+<td>1</td>
+<td>inside</td>
+</tr>
+<tr>
+<td>top in ocsvm only</td>
+<td>10.10.1.58</td>
+<td>2026-09-06 03:00:00+00</td>
+<td>0.9959</td>
+<td>1</td>
+<td>inside</td>
+</tr>
+<tr>
+<td>top in iforest only</td>
+<td>10.10.2.109</td>
+<td>2026-09-06 01:30:00+00</td>
+<td>0.9998</td>
+<td>0.986</td>
+<td>inside</td>
+</tr>
+<tr>
+<td>top in iforest only</td>
+<td>10.10.1.44</td>
+<td>2026-09-04 12:30:00+00</td>
+<td>0.9998</td>
+<td>0.9997</td>
+<td>inside</td>
+</tr>
+<tr>
+<td>top in iforest only</td>
+<td>10.10.1.44</td>
+<td>2026-09-05 03:00:00+00</td>
+<td>0.9998</td>
+<td>0.9997</td>
+<td>inside</td>
+</tr>
+<tr>
+<td>top in ocsvm only</td>
+<td>10.10.2.74</td>
+<td>2026-09-05 18:15:00+00</td>
+<td>0.9996</td>
+<td>1</td>
+<td>inside</td>
+</tr>
+<tr>
+<td>top in ocsvm only</td>
+<td>10.10.2.79</td>
+<td>2026-09-04 12:15:00+00</td>
+<td>0.9986</td>
+<td>1</td>
+<td>inside</td>
+</tr>
+<tr>
+<td>top in ocsvm only</td>
+<td>10.10.2.74</td>
+<td>2026-09-05 18:00:00+00</td>
+<td>0.9993</td>
+<td>1</td>
+<td>inside</td>
+</tr>
+<tr>
+<td>top in ocsvm only</td>
+<td>10.10.2.126</td>
+<td>2026-09-06 04:15:00+00</td>
+<td>0.9979</td>
+<td>1</td>
+<td>inside</td>
+</tr>
+<tr>
+<td>top in iforest only</td>
+<td>10.10.1.68</td>
+<td>2026-09-06 10:15:00+00</td>
+<td>0.9998</td>
+<td>0.986</td>
+<td>inside</td>
+</tr>
+<tr>
+<td>top in ocsvm only</td>
+<td>10.10.2.79</td>
+<td>2026-09-04 12:00:00+00</td>
+<td>0.9975</td>
+<td>1</td>
+<td>inside</td>
+</tr>
+<tr>
+<td>top in iforest only</td>
+<td>10.10.5.17</td>
+<td>2026-09-05 17:30:00+00</td>
+<td>0.9998</td>
+<td>0.984</td>
+<td>inside</td>
+</tr>
+</tbody>
+</table>
+<h2>8. Supplied pentest ranges (weak annotations)</h2>
+<table>
+<thead>
+<tr>
+<th>name</th>
+<th>start (UTC)</th>
+<th>end (UTC, excl.)</th>
+<th>source</th>
+<th>confidence</th>
+<th>notes</th>
+<th>periods touched</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>demo-injected-attack-days</td>
+<td>2026-09-04T00:00:00+00:00</td>
+<td>2026-09-07T00:00:00+00:00</td>
+<td>data/synth/truth/injections.csv (synthetic demo)</td>
+<td>high</td>
+<td>scans, brute force, beaconing and exfiltration were injected on these days</td>
+<td>test</td>
+</tr>
+</tbody>
+</table>
+<p>Where review-band and daily top-20 windows fall, versus all windows (buffer 12 h). <em>Ratio</em> = share among flagged windows / share among all windows; &gt; 1 = over-represented. This describes co-occurrence with broad date ranges; it is not a detection rate, and any unusual activity that happens to coincide with the ranges would look the same.</p>
+<table>
+<thead>
+<tr>
+<th>model</th>
+<th>period</th>
+<th>category</th>
+<th>windows</th>
+<th>base share</th>
+<th>review share</th>
+<th>review ratio</th>
+<th>top-20 share</th>
+<th>top-20 ratio</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>iforest</td>
+<td>test</td>
+<td>inside known pentest window</td>
+<td>59373</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+</tr>
+<tr>
+<td>iforest</td>
+<td>train</td>
+<td>outside supplied windows</td>
+<td>39433</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+</tr>
+<tr>
+<td>iforest</td>
+<td>validation</td>
+<td>buffer / uncertain</td>
+<td>11500</td>
+<td>0.5815</td>
+<td>0.5657</td>
+<td>0.9728</td>
+<td>0.7</td>
+<td>1.204</td>
+</tr>
+<tr>
+<td>iforest</td>
+<td>validation</td>
+<td>outside supplied windows</td>
+<td>8278</td>
+<td>0.4185</td>
+<td>0.4343</td>
+<td>1.038</td>
+<td>0.3</td>
+<td>0.7168</td>
+</tr>
+<tr>
+<td>ocsvm</td>
+<td>test</td>
+<td>inside known pentest window</td>
+<td>59373</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+</tr>
+<tr>
+<td>ocsvm</td>
+<td>train</td>
+<td>outside supplied windows</td>
+<td>39433</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+</tr>
+<tr>
+<td>ocsvm</td>
+<td>validation</td>
+<td>outside supplied windows</td>
+<td>8278</td>
+<td>0.4185</td>
+<td>0.4182</td>
+<td>0.9991</td>
+<td>0.35</td>
+<td>0.8362</td>
+</tr>
+<tr>
+<td>ocsvm</td>
+<td>validation</td>
+<td>buffer / uncertain</td>
+<td>11500</td>
+<td>0.5815</td>
+<td>0.5818</td>
+<td>1.001</td>
+<td>0.65</td>
+<td>1.118</td>
+</tr>
+</tbody>
+</table>
+<p>Sensitivity to the buffer width, for windows <em>inside a range or its buffer</em> (a pattern that appears for one buffer only is fragile; a ratio that grows with a wider buffer suggests activity near, not in, the supplied dates):</p>
+<table>
+<thead>
+<tr>
+<th>model</th>
+<th>period</th>
+<th>buffer h</th>
+<th>inside+buffer base share</th>
+<th>review share</th>
+<th>review ratio</th>
+<th>top-20 share</th>
+<th>top-20 ratio</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>iforest</td>
+<td>test</td>
+<td>0</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+</tr>
+<tr>
+<td>iforest</td>
+<td>test</td>
+<td>12</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+</tr>
+<tr>
+<td>iforest</td>
+<td>test</td>
+<td>48</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+</tr>
+<tr>
+<td>iforest</td>
+<td>validation</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>-</td>
+<td>0</td>
+<td>-</td>
+</tr>
+<tr>
+<td>iforest</td>
+<td>validation</td>
+<td>12</td>
+<td>0.5815</td>
+<td>0.5657</td>
+<td>0.9728</td>
+<td>0.7</td>
+<td>1.204</td>
+</tr>
+<tr>
+<td>iforest</td>
+<td>validation</td>
+<td>48</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+</tr>
+<tr>
+<td>ocsvm</td>
+<td>test</td>
+<td>0</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+</tr>
+<tr>
+<td>ocsvm</td>
+<td>test</td>
+<td>12</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+</tr>
+<tr>
+<td>ocsvm</td>
+<td>test</td>
+<td>48</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+</tr>
+<tr>
+<td>ocsvm</td>
+<td>validation</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>-</td>
+<td>0</td>
+<td>-</td>
+</tr>
+<tr>
+<td>ocsvm</td>
+<td>validation</td>
+<td>12</td>
+<td>0.5815</td>
+<td>0.5818</td>
+<td>1.001</td>
+<td>0.65</td>
+<td>1.118</td>
+</tr>
+<tr>
+<td>ocsvm</td>
+<td>validation</td>
+<td>48</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+</tr>
+</tbody>
+</table>
+<h2>9. Robustness, contamination and drift</h2>
+<p><strong>Seed stability</strong> (validation period): each model refitted with other seeds (the seed also changes the training sample).</p>
+<table>
+<thead>
+<tr>
+<th>model</th>
+<th>variant</th>
+<th>spearman</th>
+<th>top-200 jaccard</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>iforest</td>
+<td>iforest_seed43</td>
+<td>0.983</td>
+<td>0.7467</td>
+</tr>
+<tr>
+<td>iforest</td>
+<td>iforest_seed44</td>
+<td>0.9697</td>
+<td>0.6949</td>
+</tr>
+<tr>
+<td>ocsvm</td>
+<td>ocsvm_seed43</td>
+<td>1</td>
+<td>0.99</td>
+</tr>
+<tr>
+<td>ocsvm</td>
+<td>ocsvm_seed44</td>
+<td>1</td>
+<td>0.9802</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Contamination sensitivity</strong> (test period): the same model trained on alternative baselines. <code>excl_annotated</code> / <code>incl_annotated</code> flip whether windows in the supplied ranges (and buffers) are training data; <code>trimNNN</code> refits without the primary model's own highest-scoring training windows. Large changes mean the baseline choice matters: a baseline containing attack-like activity can absorb it as normal.</p>
+<table>
+<thead>
+<tr>
+<th>model</th>
+<th>variant</th>
+<th>train rows</th>
+<th>spearman vs primary</th>
+<th>top-200 jaccard</th>
+<th>top-N inside/buffer/outside (primary)</th>
+<th>(variant)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>iforest</td>
+<td>iforest_trim990</td>
+<td>39038</td>
+<td>0.986</td>
+<td>0.5094</td>
+<td>1.00 / 0.00 / 0.00</td>
+<td>1.00 / 0.00 / 0.00</td>
+</tr>
+<tr>
+<td>ocsvm</td>
+<td>ocsvm_trim990</td>
+<td>20000</td>
+<td>0.9955</td>
+<td>0.6393</td>
+<td>1.00 / 0.00 / 0.00</td>
+<td>1.00 / 0.00 / 0.00</td>
+</tr>
+</tbody>
+</table>
+<p>Hosts over-represented in iforest's top 1 % of <em>training</em> windows (possible baseline contamination, or unusual-but-normal hosts; worth a look):</p>
+<table>
+<thead>
+<tr>
+<th>host</th>
+<th>train windows</th>
+<th>top windows</th>
+<th>share of top</th>
+<th>share of windows</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>10.10.1.46</td>
+<td>118</td>
+<td>19</td>
+<td>0.0481</td>
+<td>0.002992</td>
+</tr>
+<tr>
+<td>10.10.1.45</td>
+<td>113</td>
+<td>15</td>
+<td>0.03797</td>
+<td>0.002866</td>
+</tr>
+<tr>
+<td>10.10.1.40</td>
+<td>114</td>
+<td>12</td>
+<td>0.03038</td>
+<td>0.002891</td>
+</tr>
+<tr>
+<td>10.10.1.47</td>
+<td>121</td>
+<td>12</td>
+<td>0.03038</td>
+<td>0.003068</td>
+</tr>
+<tr>
+<td>10.10.1.49</td>
+<td>115</td>
+<td>12</td>
+<td>0.03038</td>
+<td>0.002916</td>
+</tr>
+</tbody>
+</table>
+<p>Hosts over-represented in ocsvm's top 1 % of <em>training</em> windows (possible baseline contamination, or unusual-but-normal hosts; worth a look):</p>
+<table>
+<thead>
+<tr>
+<th>host</th>
+<th>train windows</th>
+<th>top windows</th>
+<th>share of top</th>
+<th>share of windows</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>10.10.1.46</td>
+<td>118</td>
+<td>32</td>
+<td>0.08101</td>
+<td>0.002992</td>
+</tr>
+<tr>
+<td>10.10.1.47</td>
+<td>121</td>
+<td>31</td>
+<td>0.07848</td>
+<td>0.003068</td>
+</tr>
+<tr>
+<td>10.10.1.45</td>
+<td>113</td>
+<td>29</td>
+<td>0.07342</td>
+<td>0.002866</td>
+</tr>
+<tr>
+<td>10.10.1.43</td>
+<td>116</td>
+<td>22</td>
+<td>0.0557</td>
+<td>0.002942</td>
+</tr>
+<tr>
+<td>10.10.1.49</td>
+<td>115</td>
+<td>22</td>
+<td>0.0557</td>
+<td>0.002916</td>
+</tr>
+</tbody>
+</table>
+<p>Daily top-20 concentration for iforest (few hosts dominating = one noisy host may crowd out others):</p>
+<table>
+<thead>
+<tr>
+<th>period</th>
+<th>top windows</th>
+<th>distinct hosts</th>
+<th>top-5 host share</th>
+<th>most frequent host</th>
+<th>count</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>test</td>
+<td>60</td>
+<td>40</td>
+<td>0.3333</td>
+<td>10.10.1.46</td>
+<td>5</td>
+</tr>
+<tr>
+<td>train</td>
+<td>40</td>
+<td>31</td>
+<td>0.325</td>
+<td>10.10.1.46</td>
+<td>4</td>
+</tr>
+<tr>
+<td>validation</td>
+<td>20</td>
+<td>17</td>
+<td>0.4</td>
+<td>10.10.1.44</td>
+<td>3</td>
+</tr>
+</tbody>
+</table>
+<p>Daily top-20 concentration for ocsvm (few hosts dominating = one noisy host may crowd out others):</p>
+<table>
+<thead>
+<tr>
+<th>period</th>
+<th>top windows</th>
+<th>distinct hosts</th>
+<th>top-5 host share</th>
+<th>most frequent host</th>
+<th>count</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>test</td>
+<td>60</td>
+<td>29</td>
+<td>0.5333</td>
+<td>10.10.4.244</td>
+<td>14</td>
+</tr>
+<tr>
+<td>train</td>
+<td>40</td>
+<td>30</td>
+<td>0.3</td>
+<td>10.10.1.41</td>
+<td>3</td>
+</tr>
+<tr>
+<td>validation</td>
+<td>20</td>
+<td>17</td>
+<td>0.4</td>
+<td>10.10.1.44</td>
+<td>3</td>
+</tr>
+</tbody>
+</table>
+<p><img alt="drift" src="charts/drift.svg" /></p>
+<h2>10. Coverage, field mapping and data quality</h2>
+<table>
+<thead>
+<tr>
+<th>canonical</th>
+<th>source column</th>
+<th>type</th>
+<th>status</th>
+<th>conversion</th>
+<th>note</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>flow_start</td>
+<td>flow_start_time</td>
+<td>TIMESTAMP WITH TIME ZONE</td>
+<td>ok</td>
+<td>UTC instant</td>
+<td></td>
+</tr>
+<tr>
+<td>src_ip</td>
+<td>src_id_addr</td>
+<td>VARCHAR</td>
+<td>ok</td>
+<td>text; IPv4 dotted quads recognised for the internal/external share</td>
+<td></td>
+</tr>
+<tr>
+<td>flow_end</td>
+<td>flow_end_time</td>
+<td>TIMESTAMP WITH TIME ZONE</td>
+<td>ok</td>
+<td>UTC instant</td>
+<td></td>
+</tr>
+<tr>
+<td>dst_ip</td>
+<td>dist_id_addr</td>
+<td>VARCHAR</td>
+<td>ok</td>
+<td>text; IPv4 dotted quads recognised for the internal/external share</td>
+<td></td>
+</tr>
+<tr>
+<td>dst_port</td>
+<td>dist_port</td>
+<td>BIGINT</td>
+<td>ok</td>
+<td>integer code (never used as a magnitude)</td>
+<td></td>
+</tr>
+<tr>
+<td>protocol</td>
+<td>ip_protocol_id</td>
+<td>BIGINT</td>
+<td>ok</td>
+<td>integer code (never used as a magnitude)</td>
+<td></td>
+</tr>
+<tr>
+<td>bytes</td>
+<td>num_bytes</td>
+<td>BIGINT</td>
+<td>ok</td>
+<td>numeric; negative values treated as NULL</td>
+<td></td>
+</tr>
+<tr>
+<td>packets</td>
+<td>num_packets</td>
+<td>BIGINT</td>
+<td>ok</td>
+<td>numeric; negative values treated as NULL</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>Unmapped source columns (never modelled): 34. Full profile: <code>uv run netanomaly profile</code> -&gt; <code>profile/profile.md</code>.</p>
+<p>Assumptions:</p>
+<ul>
+<li>No field meaning is validated against collector documentation (contract: 0/42 validated); the mapping is a configuration choice, not a verified semantic.</li>
+<li>bytes/packets are assumed per flow, one direction (octetDeltaCount / packetDeltaCount).</li>
+<li>flow_end - flow_start is assumed to be the flow duration; exporter active/idle timeouts split long flows, so durations are capped by the exporter configuration.</li>
+<li>internal share uses RFC 1918 IPv4 ranges only; IPv6 or non-dotted values count as unknown.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>feature</th>
+<th>null share</th>
+<th>train null share</th>
+<th>train non-finite</th>
+<th>status</th>
+<th>handling</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>flows</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>ok</td>
+<td>log1p (stateless), then median imputation fitted on training rows</td>
+</tr>
+<tr>
+<td>bytes_total</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>ok</td>
+<td>log1p (stateless), then median imputation fitted on training rows</td>
+</tr>
+<tr>
+<td>packets_total</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>ok</td>
+<td>log1p (stateless), then median imputation fitted on training rows</td>
+</tr>
+<tr>
+<td>max_flow_bytes</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>ok</td>
+<td>log1p (stateless), then median imputation fitted on training rows</td>
+</tr>
+<tr>
+<td>bytes_per_packet</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>ok</td>
+<td>log1p (stateless), then median imputation fitted on training rows</td>
+</tr>
+<tr>
+<td>uniq_dst_ip</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>ok</td>
+<td>log1p (stateless), then median imputation fitted on training rows</td>
+</tr>
+<tr>
+<td>uniq_dst_port</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>ok</td>
+<td>log1p (stateless), then median imputation fitted on training rows</td>
+</tr>
+<tr>
+<td>internal_share</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>ok</td>
+<td>median imputation fitted on training rows</td>
+</tr>
+<tr>
+<td>tcp_share</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>ok</td>
+<td>median imputation fitted on training rows</td>
+</tr>
+<tr>
+<td>udp_share</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>ok</td>
+<td>median imputation fitted on training rows</td>
+</tr>
+<tr>
+<td>icmp_share</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>constant</td>
+<td>dropped from the model (constant on training rows)</td>
+</tr>
+<tr>
+<td>mean_duration_s</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>ok</td>
+<td>log1p (stateless), then median imputation fitted on training rows</td>
+</tr>
+</tbody>
+</table>
+<p>Training filter: including windows in supplied ranges. Training samples (bounded, spread over days):</p>
+<table>
+<thead>
+<tr>
+<th>model</th>
+<th>train rows</th>
+<th>available</th>
+<th>sample rule</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>iforest</td>
+<td>39433</td>
+<td>39433</td>
+<td>training rows ranked per UTC day by hash(src_ip, window_start, seed=42); at most 100000 rows per day (= ceil(200000 / 2 training days)), then at most 200000 overall by the same hash. A row's inclusion depends only on its own key and day.</td>
+</tr>
+<tr>
+<td>ocsvm</td>
+<td>20000</td>
+<td>39433</td>
+<td>training rows ranked per UTC day by hash(src_ip, window_start, seed=42); at most 10000 rows per day (= ceil(20000 / 2 training days)), then at most 20000 overall by the same hash. A row's inclusion depends only on its own key and day.</td>
+</tr>
+</tbody>
+</table>
+<h2>11. Limitations of this run</h2>
+<ul>
+<li>No reliable labels: nothing here measures detection quality. Pentest ranges are broad; overlap with them is descriptive.</li>
+<li>A high rank means <em>unusual relative to the chosen training baseline</em>, which may be benign change (new services, backups, your own scanners) - and a baseline that contains attack-like activity can hide it.</li>
+<li>Features describe one host and one window only (no history, no peer baselines, no periodicity), so slow, low-volume or beacon-like activity may rank low.</li>
+<li>Field meanings are unvalidated (see mapping). Timestamps without offset were assumed UTC where noted.</li>
+<li>Changing settings after looking at test results makes later test results optimistic.</li>
+<li>Raw scores are only comparable within one fitted model; use percentiles/bands to compare models.</li>
+</ul>
+</body></html>
